@@ -32,7 +32,7 @@ That's the demo. Build only what serves that story.
 
 ---
 
-## Person A — Frontend
+## Fernando — Frontend
 
 **Stack:** Next.js App Router, Tailwind, shadcn/ui
 
@@ -51,7 +51,7 @@ That's the demo. Build only what serves that story.
 
 ---
 
-## Person B — Backend
+## Rahul — Backend
 
 **Stack:** Next.js API routes, MongoDB, Vercel AI SDK (or direct OpenAI/Anthropic call)
 
@@ -83,7 +83,7 @@ That's the demo. Build only what serves that story.
 }
 ```
 
-Agree on this in hour 0. Person A mocks it with static JSON while Person B builds the real endpoint.
+Agree on this in hour 0. Fernando mocks it with static JSON while Rahul builds the real endpoint.
 
 ---
 

@@ -1,8 +1,83 @@
 # pain.exe
 
-Planning-first repository for a web-only, mobile-friendly AI coaching app inspired by the "relentless accountability" concept in the hackathon brief.
+`pain.exe` is a web-first personal AI agent for discipline, fitness, and goal adherence. It helps people turn intentions into completed actions by combining plan generation, accountability, calendar pressure, wearable verification, escalating reminders, and voice-based follow-up into one coaching loop.
 
-This commit intentionally contains no production code yet. It establishes the implementation map, system boundaries, and component-level docs so the project can start with a clean architecture instead of ad hoc hacking.
+This repository is intentionally planning-first right now. It establishes the product story, committed technology stack, system boundaries, and milestone roadmap so the hackathon team can align quickly and build against a shared blueprint.
+
+## Problem
+
+Most health, fitness, and self-improvement tools fail after the initial burst of motivation. They log goals, count streaks, and send generic reminders, but they do not behave like a real accountability partner that notices avoidance, reacts to missed commitments, and adapts the plan to keep someone moving.
+
+People especially struggle when they need:
+
+- structure instead of blank-slate motivation
+- persistent follow-up instead of passive tracking
+- adaptation after failure instead of guilt-driven churn
+- support that fits their real schedule, constraints, and energy
+
+## Solution
+
+`pain.exe` is designed as a personal AI agent, not just a chatbot. The system maintains user context over time, generates day-by-day training plans, watches for missed commitments, coordinates interventions across multiple channels, and restructures the path forward when the user falls behind.
+
+The product experience centers on an event-driven coaching loop:
+
+1. The user commits to a goal and schedule.
+2. The AI agent generates a structured plan.
+3. The system tracks adherence through check-ins, calendar timing, and wearable signals.
+4. Missed work triggers deterministic escalation.
+5. The agent follows up through chat, SMS, calendar pressure, and AI voice calls when allowed.
+6. The plan adapts with recovery actions instead of silently collapsing.
+
+## Personal AI Agent Capabilities
+
+This project is explicitly being built with personal AI agent behavior in mind.
+
+- Maintains persistent memory of goals, misses, excuses, streaks, and preferences
+- Takes initiative by scheduling follow-ups and escalating when the user disengages
+- Coordinates actions across chat, SMS, calendar, and voice channels
+- Adapts future recommendations based on adherence, constraints, and imported activity
+- Acts continuously through background jobs instead of only responding when manually opened
+- Preserves persona while remaining bounded by system safety and consent rules
+
+In practice, the product should feel like a personal operator for behavior change: aware of commitments, capable of acting on the user's behalf within approved boundaries, and persistent enough to help break inertia.
+
+## Social Good
+
+The long-term value of this project is broader than performance coaching. A well-designed personal accountability agent can support people who struggle with consistency, confidence, routine-building, or follow-through.
+
+Potential social-good outcomes include:
+
+- improving exercise adherence and general health habits
+- helping users rebuild discipline after burnout or setbacks
+- making coaching support more accessible than traditional one-on-one services
+- creating a structured recovery path after missed commitments instead of shame-driven dropout
+- demonstrating how personal AI agents can be used for sustained positive behavior change
+
+## Committed Technology Stack
+
+These are the technologies we are committing to for the hackathon build:
+
+- Frontend: Next.js App Router, TypeScript, Tailwind CSS, shadcn/ui
+- Hosting: Vercel for the web app
+- Backend: Next.js API routes and server actions
+- Worker orchestration: separate background worker with Redis-backed delayed jobs
+- Database: MongoDB Atlas
+- Queue and scheduling: Upstash Redis or BullMQ-compatible Redis
+- Auth: Clerk or Auth.js with email and Google sign-in
+- AI reasoning: LLM layer for intake summarization, planning, excuse classification, and adaptive messaging
+- Voice: ElevenLabs behind a provider abstraction
+- Telephony and SMS: Twilio
+- Calendar: Google Calendar first
+- Wearables: one credible Apple Health, Google Fit, or aggregator-backed ingestion path
+- Observability: Sentry, PostHog, structured logs
+
+## What Makes This Different
+
+- Personal AI agent behavior instead of single-turn chat
+- Deterministic escalation engine instead of model-only autonomy
+- Coach persona separated from product rules and consent boundaries
+- Swappable providers for voice, telephony, and integrations
+- Demo-first architecture that still leaves room for a safer "inspired-by" coach pivot
 
 ## Repo Template
 
@@ -44,7 +119,12 @@ This commit intentionally contains no production code yet. It establishes the im
 |   |   |-- safety-compliance.md
 |   |   `-- testing-plan.md
 |   |-- roadmap/
-|   |   `-- demo-slice.md
+|   |   |-- demo-slice.md
+|   |   |-- milestone-01-foundation.md
+|   |   |-- milestone-02-core-agent-loop.md
+|   |   |-- milestone-03-escalations-and-integrations.md
+|   |   |-- milestone-04-demo-polish.md
+|   |   `-- team-roles.md
 |   `-- INDEX.md
 `-- scripts/
     `-- README.md
@@ -54,20 +134,31 @@ This commit intentionally contains no production code yet. It establishes the im
 
 1. Start with [docs/INDEX.md](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/INDEX.md) for the full reading order.
 2. Build the first thin slice from [docs/roadmap/demo-slice.md](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/demo-slice.md).
-3. Implement code into the predefined app and package folders as each planning doc is converted into tickets.
+3. Use the milestone files in `docs/roadmap/` to split work across the hackathon team.
+4. Implement code into the predefined app and package folders as each planning doc is converted into tickets.
 
 ## Principles
 
 - Web-first and demo-first.
 - Event-driven coaching loop over generic chat.
+- Personal AI agent behavior with memory, initiative, and follow-through.
 - Persona layer separated from delivery channels and safety rules.
 - Deterministic escalation policy with AI-generated copy.
 - Provider abstractions from day one for calendar, wearables, SMS, calls, and voice.
 
-## Initial Build Order
+## Team Build Order
 
 1. `apps/web`: landing, onboarding, seeded demo account, command center.
 2. `packages/domain`: shared types, policies, plan generation contracts.
 3. `apps/worker`: delayed jobs, escalation timers, webhook handling.
 4. `packages/providers`: Twilio, ElevenLabs, calendar, wearable adapters.
 5. `packages/ui`: reusable interface components and design tokens.
+
+## Roadmap
+
+- [Demo Slice](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/demo-slice.md)
+- [Milestone 01: Foundation](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/milestone-01-foundation.md)
+- [Milestone 02: Core Agent Loop](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/milestone-02-core-agent-loop.md)
+- [Milestone 03: Escalations And Integrations](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/milestone-03-escalations-and-integrations.md)
+- [Milestone 04: Demo Polish](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/milestone-04-demo-polish.md)
+- [Team Roles And Ownership](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/team-roles.md)

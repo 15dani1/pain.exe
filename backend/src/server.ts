@@ -1,14 +1,50 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
+import type { Request, Response, NextFunction } from "express";
 import { ObjectId } from "mongodb";
 import { config } from "./config.js";
 import { getDb, withMongoRetry } from "./db.js";
 import type { DashboardResponse, EscalationEvent, EscalationStage, MessageRole, TaskStatus } from "./types.js";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "200kb" }));
 app.use(cors({ origin: config.frontendOrigin }));
+
+const MAX_CHAT_MESSAGE_LENGTH = 1200;
+const MAX_VOICE_TEXT_LENGTH = 400;
+const rateLimitStore = new Map<string, { count: number; windowStart: number }>();
+
+function getClientKey(req: Request) {
+  const xff = req.headers["x-forwarded-for"];
+  if (typeof xff === "string" && xff.trim()) {
+    return xff.split(",")[0].trim();
+  }
+  return req.ip || req.socket.remoteAddress || "unknown";
+}
+
+function rateLimit(limit: number, windowMs: number) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const key = `${req.path}:${getClientKey(req)}`;
+    const now = Date.now();
+    const entry = rateLimitStore.get(key);
+
+    if (!entry || now - entry.windowStart >= windowMs) {
+      rateLimitStore.set(key, { count: 1, windowStart: now });
+      return next();
+    }
+
+    if (entry.count >= limit) {
+      const retryAfterSec = Math.max(1, Math.ceil((windowMs - (now - entry.windowStart)) / 1000));
+      res.setHeader("Retry-After", String(retryAfterSec));
+      return res.status(429).json({ error: "Rate limit exceeded. Try again soon." });
+    }
+
+    entry.count += 1;
+    rateLimitStore.set(key, entry);
+    return next();
+  };
+}
 
 function toIso(date: Date) {
   return date.toISOString();
@@ -92,6 +128,36 @@ async function maybeOpenAIReply(userMessage: string, context: { stage: Escalatio
 
   const data = (await response.json()) as { output_text?: string };
   return data.output_text?.trim() || localCoachReply(userMessage, context.stage, context.debtCount);
+}
+
+async function generateVoiceBase64(text: string) {
+  if (!config.elevenLabsApiKey || !config.elevenLabsVoiceId) {
+    throw new Error("ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID are required for voice preview");
+  }
+
+  const response = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(config.elevenLabsVoiceId)}`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key": config.elevenLabsApiKey
+      },
+      body: JSON.stringify({
+        text,
+        model_id: config.elevenLabsModelId
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`ElevenLabs request failed: ${detail}`);
+  }
+
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  return audioBuffer.toString("base64");
 }
 
 app.get("/health", (_req, res) => {
@@ -205,11 +271,19 @@ app.get("/api/dashboard", async (req, res) => {
   }
 });
 
-app.post("/api/chat", async (req, res) => {
+app.post("/api/chat", rateLimit(30, 60_000), async (req, res) => {
   try {
-    const { userId, message } = req.body as { userId?: string; message?: string };
-    if (!userId || !ObjectId.isValid(userId) || !message) {
+    const { userId, message, includeVoice } = req.body as {
+      userId?: string;
+      message?: string;
+      includeVoice?: boolean;
+    };
+    const trimmedMessage = String(message ?? "").trim();
+    if (!userId || !ObjectId.isValid(userId) || !trimmedMessage) {
       return res.status(400).json({ error: "userId and message are required" });
+    }
+    if (trimmedMessage.length > MAX_CHAT_MESSAGE_LENGTH) {
+      return res.status(400).json({ error: `message must be <= ${MAX_CHAT_MESSAGE_LENGTH} characters` });
     }
 
     const db = await withMongoRetry(async () => getDb());
@@ -223,7 +297,7 @@ app.post("/api/chat", async (req, res) => {
 
     const stage = boundedStage(Number(escalation?.stage ?? 1));
     const debtCount = Number(plan?.debtCount ?? 0);
-    const coachReply = await maybeOpenAIReply(message, { stage, debtCount });
+    const coachReply = await maybeOpenAIReply(trimmedMessage, { stage, debtCount });
     const sentAt = nowIso();
 
     await db.collection("escalations").updateOne(
@@ -233,7 +307,7 @@ app.post("/api/chat", async (req, res) => {
         $push: {
           recentMessages: {
             $each: [
-              { role: "user", content: message, sentAt },
+              { role: "user", content: trimmedMessage, sentAt },
               { role: "coach", content: coachReply, sentAt: nowIso() }
             ],
             $slice: -20
@@ -241,6 +315,27 @@ app.post("/api/chat", async (req, res) => {
         }
       } as any
     );
+
+    if (includeVoice) {
+      if (coachReply.length > MAX_VOICE_TEXT_LENGTH) {
+        return res.status(400).json({
+          error: `coach reply is too long for voice preview (max ${MAX_VOICE_TEXT_LENGTH} chars)`
+        });
+      }
+
+      try {
+        const audioBase64 = await generateVoiceBase64(coachReply);
+        return res.json({ role: "coach", content: coachReply, sentAt, voice: { mimeType: "audio/mpeg", audioBase64 } });
+      } catch (voiceError) {
+        return res.status(502).json({
+          error: "Failed to generate chat voice preview",
+          detail: String(voiceError),
+          role: "coach",
+          content: coachReply,
+          sentAt
+        });
+      }
+    }
 
     return res.json({ role: "coach", content: coachReply, sentAt });
   } catch (error) {
@@ -373,45 +468,21 @@ app.post("/api/recovery", async (req, res) => {
   }
 });
 
-app.post("/api/voice/preview", async (req, res) => {
+app.post("/api/voice/preview", rateLimit(20, 60_000), async (req, res) => {
   try {
     const { text } = req.body as { text?: string };
     const trimmed = String(text ?? "").trim();
     if (!trimmed) {
       return res.status(400).json({ error: "text is required" });
     }
-
-    if (!config.elevenLabsApiKey || !config.elevenLabsVoiceId) {
-      return res.status(400).json({
-        error: "ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID are required for voice preview"
-      });
+    if (trimmed.length > MAX_VOICE_TEXT_LENGTH) {
+      return res.status(400).json({ error: `text must be <= ${MAX_VOICE_TEXT_LENGTH} characters` });
     }
 
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(config.elevenLabsVoiceId)}`,
-      {
-        method: "POST",
-        headers: {
-          Accept: "audio/mpeg",
-          "Content-Type": "application/json",
-          "xi-api-key": config.elevenLabsApiKey
-        },
-        body: JSON.stringify({
-          text: trimmed,
-          model_id: config.elevenLabsModelId
-        })
-      }
-    );
-
-    if (!response.ok) {
-      const detail = await response.text();
-      return res.status(502).json({ error: "ElevenLabs request failed", detail });
-    }
-
-    const audioBuffer = Buffer.from(await response.arrayBuffer());
+    const audioBase64 = await generateVoiceBase64(trimmed);
     return res.json({
       mimeType: "audio/mpeg",
-      audioBase64: audioBuffer.toString("base64")
+      audioBase64
     });
   } catch (error) {
     return res.status(500).json({ error: "Failed to generate voice preview", detail: String(error) });

@@ -41,3 +41,9 @@ CORS origin is controlled via `FRONTEND_ORIGIN`.
 
 Share this file with frontend for stable integration:
 - `docs/api-contract.md`
+
+## Runtime Limits
+
+- `POST /api/chat`: `30 req/min` per IP, message max `1200` chars
+- `POST /api/voice/preview`: `20 req/min` per IP, text max `400` chars
+- `POST /api/chat` supports `includeVoice: true` to return coach audio in the same response

@@ -22,11 +22,16 @@ Response:
 ## POST /api/chat
 Request:
 ```json
-{ "userId": "<id>", "message": "I missed it" }
+{ "userId": "<id>", "message": "I missed it", "includeVoice": true }
 ```
 Response:
 ```json
-{ "role": "coach", "content": "...", "sentAt": "2026-03-28T23:20:00.000Z" }
+{
+  "role": "coach",
+  "content": "...",
+  "sentAt": "2026-03-28T23:20:00.000Z",
+  "voice": { "mimeType": "audio/mpeg", "audioBase64": "<base64>" }
+}
 ```
 
 ## POST /api/checkin
@@ -58,6 +63,11 @@ Response:
 ```json
 { "mimeType": "audio/mpeg", "audioBase64": "<base64>" }
 ```
+
+## Limits
+
+- `/api/chat`: max `30 requests/min` per client IP, `message <= 1200 chars`
+- `/api/voice/preview`: max `20 requests/min` per client IP, `text <= 400 chars`
 
 ## POST /api/demo/reset
 Request:

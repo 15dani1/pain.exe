@@ -58,6 +58,7 @@ async function run() {
     userId,
     stage: 2,
     lastActionAt: now,
+    processedMissedEvents: [],
     recentMessages: [
       {
         role: "coach",

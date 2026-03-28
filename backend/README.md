@@ -56,3 +56,4 @@ Backend implementation checklist with completed items:
 - `POST /api/voice/preview`: `20 req/min` per IP, text max `400` chars
 - `POST /api/chat` supports `includeVoice: true` to return coach audio in the same response
 - If chat voice generation fails, `/api/chat` still returns text plus `voiceError` (degraded mode)
+- `POST /api/checkin` missed events are idempotent per event key (`eventId` body or `x-idempotency-key` header)

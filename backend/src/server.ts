@@ -224,6 +224,7 @@ app.post("/api/onboarding", async (req, res) => {
       lastActionAt: now,
       recentMessages: [],
       recoveryAction: null,
+      processedMissedEvents: [],
       events: fakeEscalationLog(1),
       updatedAt: now
     });
@@ -363,7 +364,7 @@ app.post("/api/chat", rateLimit(30, 60_000), async (req, res) => {
 
 app.post("/api/checkin", async (req, res) => {
   try {
-    const { userId, status } = req.body as { userId?: string; status?: TaskStatus };
+    const { userId, status, eventId } = req.body as { userId?: string; status?: TaskStatus; eventId?: string };
     if (!userId || !ObjectId.isValid(userId) || !status || !["pending", "missed", "done"].includes(status)) {
       return sendError(res, 400, "VALIDATION_ERROR", "Valid userId and status are required");
     }
@@ -380,9 +381,75 @@ app.post("/api/checkin", async (req, res) => {
 
     const currentDebt = Number(plan?.debtCount ?? 0);
     const currentStage = boundedStage(Number(escalation?.stage ?? 1));
-
+    const explicitKey = String(req.header("x-idempotency-key") ?? eventId ?? "").trim();
+    const fallbackTaskKey = `task:${String(plan?.todayTask?.dueAt ?? "unknown")}:missed`;
+    const missedEventKey = status === "missed" ? (explicitKey || fallbackTaskKey) : "";
     const nextDebt = status === "missed" ? currentDebt + 1 : Math.max(0, currentDebt - 1);
     const nextStage = status === "missed" ? boundedStage(currentStage + 1) : boundedStage(currentStage - 1);
+
+    const recoveryAction =
+      status === "missed"
+        ? {
+            title: "20-min punishment run + commitment to tomorrow",
+            description: "Do this instead today to clear debt and stay on track."
+          }
+        : null;
+
+    if (status === "missed") {
+      const escalationResult = await db.collection("escalations").updateOne(
+        { userId: oid, processedMissedEvents: { $ne: missedEventKey } },
+        {
+          $set: {
+            stage: nextStage,
+            lastActionAt: new Date(),
+            recoveryAction,
+            events: fakeEscalationLog(nextStage),
+            updatedAt: new Date()
+          },
+          $addToSet: { processedMissedEvents: missedEventKey }
+        }
+      );
+
+      if (escalationResult.modifiedCount === 0) {
+        const [latestPlan, latestEscalation] = await withMongoRetry(async () =>
+          Promise.all([
+            db.collection("plans").findOne({ userId: oid }),
+            db.collection("escalations").findOne({ userId: oid })
+          ])
+        );
+
+        return res.json({
+          ok: true,
+          status,
+          debtCount: Number(latestPlan?.debtCount ?? currentDebt),
+          stage: boundedStage(Number(latestEscalation?.stage ?? currentStage)),
+          recoveryAction: (latestEscalation?.recoveryAction ?? recoveryAction) as typeof recoveryAction,
+          idempotentReplay: true,
+          eventKey: missedEventKey
+        });
+      }
+
+      await db.collection("plans").updateOne(
+        { userId: oid },
+        {
+          $set: {
+            "todayTask.status": status,
+            debtCount: nextDebt,
+            updatedAt: new Date()
+          }
+        }
+      );
+
+      return res.json({
+        ok: true,
+        status,
+        debtCount: nextDebt,
+        stage: nextStage,
+        recoveryAction,
+        idempotentReplay: false,
+        eventKey: missedEventKey
+      });
+    }
 
     await db.collection("plans").updateOne(
       { userId: oid },
@@ -394,14 +461,6 @@ app.post("/api/checkin", async (req, res) => {
         }
       }
     );
-
-    const recoveryAction =
-      status === "missed"
-        ? {
-            title: "20-min punishment run + commitment to tomorrow",
-            description: "Do this instead today to clear debt and stay on track."
-          }
-        : null;
 
     await db.collection("escalations").updateOne(
       { userId: oid },
@@ -416,7 +475,7 @@ app.post("/api/checkin", async (req, res) => {
       }
     );
 
-    return res.json({ ok: true, status, debtCount: nextDebt, stage: nextStage, recoveryAction });
+    return res.json({ ok: true, status, debtCount: nextDebt, stage: nextStage, recoveryAction, idempotentReplay: false });
   } catch (error) {
     return sendError(res, 500, "DB_ERROR", "Failed to check in", String(error));
   }
@@ -610,6 +669,7 @@ app.post("/api/demo/reset", async (req, res) => {
               userId: oid,
               stage: 2,
               lastActionAt: now,
+              processedMissedEvents: [],
               recentMessages: [
                 {
                   role: "coach",

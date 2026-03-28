@@ -47,11 +47,23 @@ If voice generation fails, chat still returns text with:
 ## POST /api/checkin
 Request:
 ```json
-{ "userId": "<id>", "status": "missed" }
+{ "userId": "<id>", "status": "missed", "eventId": "missed-2026-03-28-task-1" }
 ```
+Notes:
+- `eventId` is optional but recommended for deterministic idempotency on missed events.
+- You can also send `x-idempotency-key` header (takes precedence over `eventId`).
+
 Response:
 ```json
-{ "ok": true, "status": "missed", "debtCount": 2, "stage": 3, "recoveryAction": { "title": "...", "description": "..." } }
+{
+  "ok": true,
+  "status": "missed",
+  "debtCount": 2,
+  "stage": 3,
+  "recoveryAction": { "title": "...", "description": "..." },
+  "idempotentReplay": false,
+  "eventKey": "missed-2026-03-28-task-1"
+}
 ```
 
 ## POST /api/recovery

@@ -7,7 +7,9 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "seed": "tsx src/scripts/seed.ts"
+    "seed": "tsx src/scripts/seed.ts",
+    "voice:preview": "bash scripts/voice-preview.sh",
+    "smoke:test": "bash scripts/smoke-test.sh"
   },
   "dependencies": {
     "cors": "^2.8.5",

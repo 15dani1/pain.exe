@@ -42,6 +42,13 @@ function localCoachReply(message: string, stage: EscalationStage, debtCount: num
   return `You said you wanted this. Stage ${stage}, debt ${debtCount}. No drama, just action: complete the recovery run today and confirm when done. ${trimmed ? `You said: "${trimmed}".` : ""}`.trim();
 }
 
+function demoRecoveryAction() {
+  return {
+    title: "20-min punishment run + commitment to tomorrow",
+    description: "Complete this today to clear debt and reset momentum."
+  };
+}
+
 async function maybeOpenAIReply(userMessage: string, context: { stage: EscalationStage; debtCount: number }) {
   if (!config.openAiApiKey) {
     return localCoachReply(userMessage, context.stage, context.debtCount);
@@ -105,7 +112,7 @@ app.post("/api/onboarding", async (req, res) => {
       return res.status(400).json({ error: "name, goalTitle, and targetDate are required" });
     }
 
-    const db = await getDb();
+    const db = await withMongoRetry(async () => getDb());
     const users = db.collection("users");
     const goals = db.collection("goals");
     const plans = db.collection("plans");
@@ -205,10 +212,14 @@ app.post("/api/chat", async (req, res) => {
       return res.status(400).json({ error: "userId and message are required" });
     }
 
-    const db = await getDb();
+    const db = await withMongoRetry(async () => getDb());
     const oid = new ObjectId(userId);
-    const plan = await db.collection("plans").findOne({ userId: oid });
-    const escalation = await db.collection("escalations").findOne({ userId: oid });
+    const [plan, escalation] = await withMongoRetry(async () =>
+      Promise.all([
+        db.collection("plans").findOne({ userId: oid }),
+        db.collection("escalations").findOne({ userId: oid })
+      ])
+    );
 
     const stage = boundedStage(Number(escalation?.stage ?? 1));
     const debtCount = Number(plan?.debtCount ?? 0);
@@ -244,11 +255,15 @@ app.post("/api/checkin", async (req, res) => {
       return res.status(400).json({ error: "Valid userId and status are required" });
     }
 
-    const db = await getDb();
+    const db = await withMongoRetry(async () => getDb());
     const oid = new ObjectId(userId);
 
-    const plan = await db.collection("plans").findOne({ userId: oid });
-    const escalation = await db.collection("escalations").findOne({ userId: oid });
+    const [plan, escalation] = await withMongoRetry(async () =>
+      Promise.all([
+        db.collection("plans").findOne({ userId: oid }),
+        db.collection("escalations").findOne({ userId: oid })
+      ])
+    );
 
     const currentDebt = Number(plan?.debtCount ?? 0);
     const currentStage = boundedStage(Number(escalation?.stage ?? 1));
@@ -301,11 +316,11 @@ app.post("/api/recovery", async (req, res) => {
       return res.status(400).json({ error: "Valid userId and action are required" });
     }
 
-    const db = await getDb();
+    const db = await withMongoRetry(async () => getDb());
     const oid = new ObjectId(userId);
     const now = new Date();
 
-    const plan = await db.collection("plans").findOne({ userId: oid });
+    const plan = await withMongoRetry(async () => db.collection("plans").findOne({ userId: oid }));
     const debtCount = Number(plan?.debtCount ?? 0);
 
     const nextDebt = action === "accept" ? Math.max(0, debtCount - 1) : debtCount;
@@ -355,6 +370,127 @@ app.post("/api/recovery", async (req, res) => {
     return res.json({ ok: true, action, debtCount: nextDebt });
   } catch (error) {
     return res.status(500).json({ error: "Failed to apply recovery", detail: String(error) });
+  }
+});
+
+app.post("/api/voice/preview", async (req, res) => {
+  try {
+    const { text } = req.body as { text?: string };
+    const trimmed = String(text ?? "").trim();
+    if (!trimmed) {
+      return res.status(400).json({ error: "text is required" });
+    }
+
+    if (!config.elevenLabsApiKey || !config.elevenLabsVoiceId) {
+      return res.status(400).json({
+        error: "ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID are required for voice preview"
+      });
+    }
+
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(config.elevenLabsVoiceId)}`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "audio/mpeg",
+          "Content-Type": "application/json",
+          "xi-api-key": config.elevenLabsApiKey
+        },
+        body: JSON.stringify({
+          text: trimmed,
+          model_id: config.elevenLabsModelId
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const detail = await response.text();
+      return res.status(502).json({ error: "ElevenLabs request failed", detail });
+    }
+
+    const audioBuffer = Buffer.from(await response.arrayBuffer());
+    return res.json({
+      mimeType: "audio/mpeg",
+      audioBase64: audioBuffer.toString("base64")
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to generate voice preview", detail: String(error) });
+  }
+});
+
+app.post("/api/demo/reset", async (req, res) => {
+  try {
+    const { userId } = req.body as { userId?: string };
+    const db = await withMongoRetry(async () => getDb());
+    const users = db.collection("users");
+    const plans = db.collection("plans");
+    const escalations = db.collection("escalations");
+
+    let oid: ObjectId;
+    if (userId && ObjectId.isValid(userId)) {
+      oid = new ObjectId(userId);
+    } else {
+      const demoUser = await withMongoRetry(async () => users.findOne({ email: "demo@painexe.local" }));
+      if (!demoUser?._id) {
+        return res.status(404).json({ error: "Demo user not found. Run npm run seed first." });
+      }
+      oid = demoUser._id as ObjectId;
+    }
+
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+    await withMongoRetry(async () =>
+      Promise.all([
+        plans.updateOne(
+          { userId: oid },
+          {
+            $set: {
+              userId: oid,
+              todayTask: {
+                title: "20-min punishment run + commitment to tomorrow",
+                dueAt: tomorrow.toISOString(),
+                status: "missed"
+              },
+              yesterdayTask: {
+                title: "45-min zone 2 run",
+                dueAt: yesterday.toISOString(),
+                status: "missed"
+              },
+              debtCount: 1,
+              updatedAt: now
+            }
+          },
+          { upsert: true }
+        ),
+        escalations.updateOne(
+          { userId: oid },
+          {
+            $set: {
+              userId: oid,
+              stage: 2,
+              lastActionAt: now,
+              recentMessages: [
+                {
+                  role: "coach",
+                  content: "You said Thursday. It's Saturday.",
+                  sentAt: now.toISOString()
+                }
+              ],
+              recoveryAction: demoRecoveryAction(),
+              events: fakeEscalationLog(2),
+              updatedAt: now
+            }
+          },
+          { upsert: true }
+        )
+      ])
+    );
+
+    return res.json({ ok: true, userId: oid.toString(), debtCount: 1, stage: 2 });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to reset demo state", detail: String(error) });
   }
 });
 

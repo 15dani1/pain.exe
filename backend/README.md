@@ -9,6 +9,8 @@ Standalone API service for hackathon demo flow.
 - `POST /api/chat`
 - `POST /api/checkin`
 - `POST /api/recovery`
+- `POST /api/voice/preview`
+- `POST /api/demo/reset`
 
 ## Quick start
 
@@ -23,6 +25,8 @@ Standalone API service for hackathon demo flow.
    - `npm install`
    - `npm run seed`
    - `npm run dev`
+5. Run smoke test (optional):
+   - `npm run smoke:test`
 
 `/api/chat` currently works without any LLM key and falls back to a deterministic persona reply, so your demo is not blocked if you skip OpenAI.
 
@@ -32,3 +36,8 @@ Fernando can point frontend API calls to this backend base URL, for example:
 - `http://localhost:4000/api/dashboard?userId=<seededUserId>`
 
 CORS origin is controlled via `FRONTEND_ORIGIN`.
+
+## Contract
+
+Share this file with frontend for stable integration:
+- `docs/api-contract.md`

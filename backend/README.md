@@ -10,6 +10,7 @@ Standalone API service for hackathon demo flow.
 - `POST /api/checkin`
 - `POST /api/recovery`
 - `POST /api/voice/preview`
+- `GET /api/demo/state`
 - `POST /api/demo/reset`
 
 ## Quick start
@@ -27,6 +28,8 @@ Standalone API service for hackathon demo flow.
    - `npm run dev`
 5. Run smoke test (optional):
    - `npm run smoke:test`
+6. Run full demo readiness check:
+   - `npm run demo:ready`
 
 `/api/chat` currently works without any LLM key and falls back to a deterministic persona reply, so your demo is not blocked if you skip OpenAI.
 
@@ -47,3 +50,4 @@ Share this file with frontend for stable integration:
 - `POST /api/chat`: `30 req/min` per IP, message max `1200` chars
 - `POST /api/voice/preview`: `20 req/min` per IP, text max `400` chars
 - `POST /api/chat` supports `includeVoice: true` to return coach audio in the same response
+- If chat voice generation fails, `/api/chat` still returns text plus `voiceError` (degraded mode)

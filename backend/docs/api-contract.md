@@ -33,6 +33,16 @@ Response:
   "voice": { "mimeType": "audio/mpeg", "audioBase64": "<base64>" }
 }
 ```
+If voice generation fails, chat still returns text with:
+```json
+{
+  "role": "coach",
+  "content": "...",
+  "sentAt": "...",
+  "voice": null,
+  "voiceError": { "error": "Failed to generate chat voice preview", "code": "VOICE_UNAVAILABLE", "detail": "..." }
+}
+```
 
 ## POST /api/checkin
 Request:
@@ -79,4 +89,27 @@ If `userId` is omitted, backend resets `demo@painexe.local`.
 Response:
 ```json
 { "ok": true, "userId": "<id>", "debtCount": 1, "stage": 2 }
+```
+
+## GET /api/demo/state
+Query params:
+- `userId` (optional; defaults to seeded `demo@painexe.local`)
+
+Response:
+```json
+{
+  "ok": true,
+  "userId": "<id>",
+  "user": { "name": "Demo User" },
+  "taskStatus": "missed",
+  "debtCount": 1,
+  "stage": 2,
+  "recoveryAction": { "title": "...", "description": "..." },
+  "updatedAt": "2026-03-29T00:00:00.000Z"
+}
+```
+
+## Error shape
+```json
+{ "error": "Human readable message", "code": "VALIDATION_ERROR", "detail": "Optional debug details" }
 ```

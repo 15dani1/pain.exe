@@ -14,6 +14,17 @@ app.use(cors({ origin: config.frontendOrigin }));
 const MAX_CHAT_MESSAGE_LENGTH = 1200;
 const MAX_VOICE_TEXT_LENGTH = 400;
 const rateLimitStore = new Map<string, { count: number; windowStart: number }>();
+type ErrorCode =
+  | "RATE_LIMITED"
+  | "VALIDATION_ERROR"
+  | "NOT_FOUND"
+  | "DB_ERROR"
+  | "VOICE_UNAVAILABLE"
+  | "INTERNAL_ERROR";
+
+function sendError(res: Response, status: number, code: ErrorCode, error: string, detail?: string) {
+  return res.status(status).json({ error, code, detail });
+}
 
 function getClientKey(req: Request) {
   const xff = req.headers["x-forwarded-for"];
@@ -37,7 +48,7 @@ function rateLimit(limit: number, windowMs: number) {
     if (entry.count >= limit) {
       const retryAfterSec = Math.max(1, Math.ceil((windowMs - (now - entry.windowStart)) / 1000));
       res.setHeader("Retry-After", String(retryAfterSec));
-      return res.status(429).json({ error: "Rate limit exceeded. Try again soon." });
+      return sendError(res, 429, "RATE_LIMITED", "Rate limit exceeded. Try again soon.");
     }
 
     entry.count += 1;
@@ -175,7 +186,7 @@ app.post("/api/onboarding", async (req, res) => {
     };
 
     if (!name || !goalTitle || !targetDate) {
-      return res.status(400).json({ error: "name, goalTitle, and targetDate are required" });
+      return sendError(res, 400, "VALIDATION_ERROR", "name, goalTitle, and targetDate are required");
     }
 
     const db = await withMongoRetry(async () => getDb());
@@ -219,7 +230,7 @@ app.post("/api/onboarding", async (req, res) => {
 
     return res.status(201).json({ userId: userInsert.insertedId.toString() });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to onboard user", detail: String(error) });
+    return sendError(res, 500, "DB_ERROR", "Failed to onboard user", String(error));
   }
 });
 
@@ -227,7 +238,7 @@ app.get("/api/dashboard", async (req, res) => {
   try {
     const userId = String(req.query.userId ?? "").trim();
     if (!ObjectId.isValid(userId)) {
-      return res.status(400).json({ error: "Valid userId query param is required" });
+      return sendError(res, 400, "VALIDATION_ERROR", "Valid userId query param is required");
     }
 
     const oid = new ObjectId(userId);
@@ -241,7 +252,7 @@ app.get("/api/dashboard", async (req, res) => {
     });
 
     if (!user || !plan || !escalation) {
-      return res.status(404).json({ error: "Dashboard data not found for user" });
+      return sendError(res, 404, "NOT_FOUND", "Dashboard data not found for user");
     }
 
     const response: DashboardResponse & { escalationEvents: EscalationEvent[] } = {
@@ -267,7 +278,7 @@ app.get("/api/dashboard", async (req, res) => {
 
     return res.json(response);
   } catch (error) {
-    return res.status(500).json({ error: "Failed to load dashboard", detail: String(error) });
+    return sendError(res, 500, "DB_ERROR", "Failed to load dashboard", String(error));
   }
 });
 
@@ -280,10 +291,10 @@ app.post("/api/chat", rateLimit(30, 60_000), async (req, res) => {
     };
     const trimmedMessage = String(message ?? "").trim();
     if (!userId || !ObjectId.isValid(userId) || !trimmedMessage) {
-      return res.status(400).json({ error: "userId and message are required" });
+      return sendError(res, 400, "VALIDATION_ERROR", "userId and message are required");
     }
     if (trimmedMessage.length > MAX_CHAT_MESSAGE_LENGTH) {
-      return res.status(400).json({ error: `message must be <= ${MAX_CHAT_MESSAGE_LENGTH} characters` });
+      return sendError(res, 400, "VALIDATION_ERROR", `message must be <= ${MAX_CHAT_MESSAGE_LENGTH} characters`);
     }
 
     const db = await withMongoRetry(async () => getDb());
@@ -318,28 +329,35 @@ app.post("/api/chat", rateLimit(30, 60_000), async (req, res) => {
 
     if (includeVoice) {
       if (coachReply.length > MAX_VOICE_TEXT_LENGTH) {
-        return res.status(400).json({
-          error: `coach reply is too long for voice preview (max ${MAX_VOICE_TEXT_LENGTH} chars)`
-        });
+        return sendError(
+          res,
+          400,
+          "VALIDATION_ERROR",
+          `coach reply is too long for voice preview (max ${MAX_VOICE_TEXT_LENGTH} chars)`
+        );
       }
 
       try {
         const audioBase64 = await generateVoiceBase64(coachReply);
         return res.json({ role: "coach", content: coachReply, sentAt, voice: { mimeType: "audio/mpeg", audioBase64 } });
       } catch (voiceError) {
-        return res.status(502).json({
-          error: "Failed to generate chat voice preview",
-          detail: String(voiceError),
+        return res.json({
           role: "coach",
           content: coachReply,
-          sentAt
+          sentAt,
+          voice: null,
+          voiceError: {
+            error: "Failed to generate chat voice preview",
+            code: "VOICE_UNAVAILABLE",
+            detail: String(voiceError)
+          }
         });
       }
     }
 
     return res.json({ role: "coach", content: coachReply, sentAt });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to process chat", detail: String(error) });
+    return sendError(res, 500, "DB_ERROR", "Failed to process chat", String(error));
   }
 });
 
@@ -347,7 +365,7 @@ app.post("/api/checkin", async (req, res) => {
   try {
     const { userId, status } = req.body as { userId?: string; status?: TaskStatus };
     if (!userId || !ObjectId.isValid(userId) || !status || !["pending", "missed", "done"].includes(status)) {
-      return res.status(400).json({ error: "Valid userId and status are required" });
+      return sendError(res, 400, "VALIDATION_ERROR", "Valid userId and status are required");
     }
 
     const db = await withMongoRetry(async () => getDb());
@@ -400,7 +418,7 @@ app.post("/api/checkin", async (req, res) => {
 
     return res.json({ ok: true, status, debtCount: nextDebt, stage: nextStage, recoveryAction });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to check in", detail: String(error) });
+    return sendError(res, 500, "DB_ERROR", "Failed to check in", String(error));
   }
 });
 
@@ -408,7 +426,7 @@ app.post("/api/recovery", async (req, res) => {
   try {
     const { userId, action } = req.body as { userId?: string; action?: "accept" | "snooze" };
     if (!userId || !ObjectId.isValid(userId) || !action || !["accept", "snooze"].includes(action)) {
-      return res.status(400).json({ error: "Valid userId and action are required" });
+      return sendError(res, 400, "VALIDATION_ERROR", "Valid userId and action are required");
     }
 
     const db = await withMongoRetry(async () => getDb());
@@ -464,7 +482,7 @@ app.post("/api/recovery", async (req, res) => {
 
     return res.json({ ok: true, action, debtCount: nextDebt });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to apply recovery", detail: String(error) });
+    return sendError(res, 500, "DB_ERROR", "Failed to apply recovery", String(error));
   }
 });
 
@@ -473,10 +491,10 @@ app.post("/api/voice/preview", rateLimit(20, 60_000), async (req, res) => {
     const { text } = req.body as { text?: string };
     const trimmed = String(text ?? "").trim();
     if (!trimmed) {
-      return res.status(400).json({ error: "text is required" });
+      return sendError(res, 400, "VALIDATION_ERROR", "text is required");
     }
     if (trimmed.length > MAX_VOICE_TEXT_LENGTH) {
-      return res.status(400).json({ error: `text must be <= ${MAX_VOICE_TEXT_LENGTH} characters` });
+      return sendError(res, 400, "VALIDATION_ERROR", `text must be <= ${MAX_VOICE_TEXT_LENGTH} characters`);
     }
 
     const audioBase64 = await generateVoiceBase64(trimmed);
@@ -485,7 +503,57 @@ app.post("/api/voice/preview", rateLimit(20, 60_000), async (req, res) => {
       audioBase64
     });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to generate voice preview", detail: String(error) });
+    const code = String(error).toLowerCase().includes("elevenlabs") ? "VOICE_UNAVAILABLE" : "INTERNAL_ERROR";
+    return sendError(res, 500, code, "Failed to generate voice preview", String(error));
+  }
+});
+
+app.get("/api/demo/state", async (req, res) => {
+  try {
+    const userId = String(req.query.userId ?? "").trim();
+    const db = await withMongoRetry(async () => getDb());
+    const users = db.collection("users");
+    const plans = db.collection("plans");
+    const escalations = db.collection("escalations");
+
+    let oid: ObjectId;
+    if (userId) {
+      if (!ObjectId.isValid(userId)) {
+        return sendError(res, 400, "VALIDATION_ERROR", "If provided, userId must be a valid ObjectId");
+      }
+      oid = new ObjectId(userId);
+    } else {
+      const demoUser = await withMongoRetry(async () => users.findOne({ email: "demo@painexe.local" }));
+      if (!demoUser?._id) {
+        return sendError(res, 404, "NOT_FOUND", "Demo user not found. Run npm run seed first.");
+      }
+      oid = demoUser._id as ObjectId;
+    }
+
+    const [user, plan, escalation] = await withMongoRetry(async () =>
+      Promise.all([
+        users.findOne({ _id: oid }),
+        plans.findOne({ userId: oid }),
+        escalations.findOne({ userId: oid })
+      ])
+    );
+
+    if (!user || !plan || !escalation) {
+      return sendError(res, 404, "NOT_FOUND", "Demo state not found for user");
+    }
+
+    return res.json({
+      ok: true,
+      userId: oid.toString(),
+      user: { name: user.name ?? "Demo User" },
+      taskStatus: plan.todayTask?.status ?? "pending",
+      debtCount: Number(plan.debtCount ?? 0),
+      stage: boundedStage(Number(escalation.stage ?? 1)),
+      recoveryAction: escalation.recoveryAction ?? null,
+      updatedAt: nowIso()
+    });
+  } catch (error) {
+    return sendError(res, 500, "DB_ERROR", "Failed to load demo state", String(error));
   }
 });
 
@@ -503,7 +571,7 @@ app.post("/api/demo/reset", async (req, res) => {
     } else {
       const demoUser = await withMongoRetry(async () => users.findOne({ email: "demo@painexe.local" }));
       if (!demoUser?._id) {
-        return res.status(404).json({ error: "Demo user not found. Run npm run seed first." });
+        return sendError(res, 404, "NOT_FOUND", "Demo user not found. Run npm run seed first.");
       }
       oid = demoUser._id as ObjectId;
     }
@@ -561,7 +629,7 @@ app.post("/api/demo/reset", async (req, res) => {
 
     return res.json({ ok: true, userId: oid.toString(), debtCount: 1, stage: 2 });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to reset demo state", detail: String(error) });
+    return sendError(res, 500, "DB_ERROR", "Failed to reset demo state", String(error));
   }
 });
 

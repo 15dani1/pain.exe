@@ -56,16 +56,16 @@ That's the demo. Build only what serves that story.
 **Stack:** Next.js API routes, MongoDB, Vercel AI SDK (or direct OpenAI/Anthropic call)
 
 ### Hours 1–4
-- [ ] MongoDB connection + 4 collections: `users`, `goals`, `plans`, `escalations`
-- [ ] Seed script — one demo user, one goal, a plan with yesterday's run marked missed, escalation at stage 2
-- [ ] `POST /api/onboarding` — creates user + goal record
-- [ ] `GET /api/dashboard` — returns today's task, escalation state, recent messages, debt count
+- [x] MongoDB connection + 4 collections: `users`, `goals`, `plans`, `escalations`
+- [x] Seed script — one demo user, one goal, a plan with yesterday's run marked missed, escalation at stage 2
+- [x] `POST /api/onboarding` — creates user + goal record
+- [x] `GET /api/dashboard` — returns today's task, escalation state, recent messages, debt count
 
 ### Hours 5–7
-- [ ] `POST /api/chat` — takes user message + context (missed workouts, escalation stage), calls LLM, returns coach reply with persona baked into system prompt
-- [ ] `POST /api/checkin` — marks task complete or missed, advances escalation stage
-- [ ] `POST /api/recovery` — accepts or snoozes a recovery action, logs resolution
-- [ ] Fake escalation log — hardcode a timeline of "reminder sent", "SMS sent", "call placed" events that the frontend can display
+- [x] `POST /api/chat` — takes user message + context (missed workouts, escalation stage), calls LLM, returns coach reply with persona baked into system prompt
+- [x] `POST /api/checkin` — marks task complete or missed, advances escalation stage
+- [x] `POST /api/recovery` — accepts or snoozes a recovery action, logs resolution
+- [x] Fake escalation log — hardcode a timeline of "reminder sent", "SMS sent", "call placed" events that the frontend can display
 
 ---
 

@@ -45,6 +45,11 @@ CORS origin is controlled via `FRONTEND_ORIGIN`.
 Share this file with frontend for stable integration:
 - `docs/api-contract.md`
 
+## Status Tracking
+
+Backend implementation checklist with completed items:
+- `docs/backend-progress.md`
+
 ## Runtime Limits
 
 - `POST /api/chat`: `30 req/min` per IP, message max `1200` chars

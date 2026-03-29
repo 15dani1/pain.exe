@@ -48,6 +48,7 @@ export type PlanRecord = {
   trigger: string;
   escalationTolerance: OnboardingPayload["escalationTolerance"] | "High";
   channels: string[];
+  adherenceSummary?: string;
 };
 
 export type TrainingPlanPreviewItem = {
@@ -55,6 +56,17 @@ export type TrainingPlanPreviewItem = {
   title: string;
   detail: string;
   intent: string;
+};
+
+export type WeeklyOverviewItem = {
+  day: string;
+  focus: string;
+  commitment: string;
+};
+
+export type MonthlyOverviewItem = {
+  month: string;
+  focus: string;
 };
 
 export type Message = {
@@ -166,22 +178,17 @@ export const integrationStatuses: IntegrationStatus[] = [
   {
     name: "Google Calendar",
     state: "Ready For Wiring",
-    detail: "Workout events, pre-run nudges, and overdue timers will connect here.",
+    detail: "Workout blocks and reminders can land here.",
   },
   {
-    name: "Garmin Demo Simulator",
+    name: "Garmin integration",
     state: "Integrated",
-    detail: "Demo-safe Garmin-style metrics can now drive real plan matching and strike escalation.",
+    detail: "Watch activity can verify whether the workout really happened.",
   },
   {
-    name: "Twilio SMS + Calls",
+    name: "SMS/Voice Calls",
     state: "Seeded Demo",
-    detail: "Escalation stages already expose the delivery states and call-summary UI.",
-  },
-  {
-    name: "ElevenLabs Voice",
-    state: "Integrated",
-    detail: "Backend voice preview exists and can be used when chat voice is enabled.",
+    detail: "The coaching tone can be previewed through message and call samples.",
   },
 ];
 
@@ -480,4 +487,175 @@ export function getTrainingPlanPreview(
         },
       ];
   }
+}
+
+export function getWeeklyOverview(
+  goalType: GoalType | "Seeded Demo",
+): WeeklyOverviewItem[] {
+  switch (goalType) {
+    case "Half Marathon":
+      return [
+        { day: "Mon", focus: "Easy run", commitment: "35-45 min" },
+        { day: "Tue", focus: "Strength", commitment: "30-40 min" },
+        { day: "Wed", focus: "Workout run", commitment: "40-50 min" },
+        { day: "Thu", focus: "Recovery", commitment: "20-30 min" },
+        { day: "Fri", focus: "Off or mobility", commitment: "15 min" },
+        { day: "Sat", focus: "Long run", commitment: "60-90 min" },
+        { day: "Sun", focus: "Reset", commitment: "20 min" },
+      ];
+    case "Weight Loss":
+      return [
+        { day: "Mon", focus: "Walk + nutrition", commitment: "35 min" },
+        { day: "Tue", focus: "Strength", commitment: "35 min" },
+        { day: "Wed", focus: "Walk", commitment: "30 min" },
+        { day: "Thu", focus: "Strength", commitment: "35 min" },
+        { day: "Fri", focus: "Recovery", commitment: "20 min" },
+        { day: "Sat", focus: "Long walk", commitment: "45 min" },
+        { day: "Sun", focus: "Prep + review", commitment: "25 min" },
+      ];
+    case "Strength Block":
+      return [
+        { day: "Mon", focus: "Upper", commitment: "50 min" },
+        { day: "Tue", focus: "Lower", commitment: "55 min" },
+        { day: "Wed", focus: "Recovery", commitment: "20 min" },
+        { day: "Thu", focus: "Upper volume", commitment: "50 min" },
+        { day: "Fri", focus: "Lower power", commitment: "45 min" },
+        { day: "Sat", focus: "Conditioning", commitment: "25 min" },
+        { day: "Sun", focus: "Off", commitment: "Rest" },
+      ];
+    case "Daily Discipline":
+      return [
+        { day: "Mon", focus: "Wake block", commitment: "20 min" },
+        { day: "Tue", focus: "Wake block", commitment: "20 min" },
+        { day: "Wed", focus: "Wake block", commitment: "20 min" },
+        { day: "Thu", focus: "Wake block", commitment: "20 min" },
+        { day: "Fri", focus: "Wake block", commitment: "20 min" },
+        { day: "Sat", focus: "Long reset", commitment: "30 min" },
+        { day: "Sun", focus: "Review", commitment: "20 min" },
+      ];
+    case "Custom Mission":
+      return [
+        { day: "Mon", focus: "Primary block", commitment: "45 min" },
+        { day: "Tue", focus: "Support block", commitment: "30 min" },
+        { day: "Wed", focus: "Primary block", commitment: "45 min" },
+        { day: "Thu", focus: "Recovery", commitment: "20 min" },
+        { day: "Fri", focus: "Primary block", commitment: "45 min" },
+        { day: "Sat", focus: "Catch-up", commitment: "30 min" },
+        { day: "Sun", focus: "Weekly review", commitment: "20 min" },
+      ];
+    case "Seeded Demo":
+      return [
+        { day: "Mon", focus: "Recovery run", commitment: "20 min" },
+        { day: "Tue", focus: "Reset workout", commitment: "30 min" },
+        { day: "Wed", focus: "Easy movement", commitment: "20 min" },
+        { day: "Thu", focus: "Workout", commitment: "35 min" },
+        { day: "Fri", focus: "Mobility", commitment: "15 min" },
+        { day: "Sat", focus: "Long effort", commitment: "50 min" },
+        { day: "Sun", focus: "Plan reset", commitment: "15 min" },
+      ];
+  }
+}
+
+export function getMonthlyOverview(
+  goalType: GoalType | "Seeded Demo",
+): MonthlyOverviewItem[] {
+  switch (goalType) {
+    case "Half Marathon":
+      return [
+        { month: "Month 1", focus: "Consistency and base mileage" },
+        { month: "Month 2", focus: "Longer runs and threshold work" },
+        { month: "Month 3", focus: "Peak volume and taper" },
+      ];
+    case "Weight Loss":
+      return [
+        { month: "Month 1", focus: "Habit consistency and calorie control" },
+        { month: "Month 2", focus: "Strength and weekly adherence" },
+        { month: "Month 3", focus: "Body comp momentum and review" },
+      ];
+    case "Strength Block":
+      return [
+        { month: "Month 1", focus: "Technique and volume base" },
+        { month: "Month 2", focus: "Progressive overload" },
+        { month: "Month 3", focus: "Peak lifts and consolidation" },
+      ];
+    case "Daily Discipline":
+      return [
+        { month: "Month 1", focus: "Morning routine lock-in" },
+        { month: "Month 2", focus: "Midday and evening consistency" },
+        { month: "Month 3", focus: "Identity reinforcement and streaks" },
+      ];
+    case "Custom Mission":
+      return [
+        { month: "Month 1", focus: "Define cadence and remove friction" },
+        { month: "Month 2", focus: "Sustain deep work blocks" },
+        { month: "Month 3", focus: "Review progress and raise the target" },
+      ];
+    case "Seeded Demo":
+      return [
+        { month: "Month 1", focus: "Recovery and accountability loop" },
+        { month: "Month 2", focus: "Consistency after reset" },
+        { month: "Month 3", focus: "Stable training rhythm" },
+      ];
+  }
+}
+
+export type WorkoutDayStripMarker = "done" | "missed" | "empty";
+
+export type WorkoutDayStripDay = {
+  key: string;
+  weekday: string;
+  marker: WorkoutDayStripMarker;
+};
+
+/** Demo outcomes for the three calendar days immediately before today. */
+const DEMO_WORKOUT_STRIP_PAST: Array<"done" | "missed"> = [
+  "done",
+  "missed",
+  "done",
+];
+
+function startOfLocalDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function addLocalDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+/**
+ * Seven-day strip centered on today: past days use seeded done/missed, today uses live status
+ * (pending → empty), future days stay empty.
+ */
+export function getWorkoutWeekStrip(
+  nowMs: number,
+  todayTaskStatus: "pending" | "done" | "missed" | null,
+): WorkoutDayStripDay[] {
+  const today = startOfLocalDay(new Date(nowMs));
+  const out: WorkoutDayStripDay[] = [];
+
+  for (let offset = -3; offset <= 3; offset++) {
+    const d = addLocalDays(today, offset);
+    const weekday = d.toLocaleDateString(undefined, { weekday: "short" });
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+    let marker: WorkoutDayStripMarker = "empty";
+    if (offset < 0) {
+      const seed = DEMO_WORKOUT_STRIP_PAST[offset + 3];
+      marker = seed ?? "empty";
+    } else if (offset === 0) {
+      if (todayTaskStatus === "done") {
+        marker = "done";
+      } else if (todayTaskStatus === "missed") {
+        marker = "missed";
+      }
+    }
+
+    out.push({ key, weekday, marker });
+  }
+
+  return out;
 }

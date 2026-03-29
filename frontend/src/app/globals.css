@@ -89,9 +89,3 @@ textarea {
   font-size: 0.72rem;
   font-weight: 700;
 }
-
-.metric-ring {
-  background:
-    radial-gradient(circle at center, rgba(255, 249, 236, 0.85) 0 44%, transparent 45%),
-    conic-gradient(from 200deg, #111111 0 55%, #ff6b35 55% 79%, rgba(22, 18, 15, 0.15) 79% 100%);
-}

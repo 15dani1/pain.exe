@@ -22,3 +22,22 @@ export async function fetchBackend(
 
   return response;
 }
+
+export async function readBackendResponse(response: Response) {
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+
+  const text = await response.text();
+  const preview = text.slice(0, 240).trim();
+
+  return {
+    error: "Backend returned a non-JSON response",
+    code: "INVALID_BACKEND_RESPONSE",
+    detail: preview || `Empty response from ${response.url}`,
+    upstreamStatus: response.status,
+    upstreamUrl: response.url,
+  };
+}

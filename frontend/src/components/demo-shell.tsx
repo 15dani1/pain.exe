@@ -6,6 +6,9 @@ import { useEffect, useMemo, useState } from "react";
 import { OnboardingWizard } from "@/components/onboarding-wizard";
 import {
   createPlanRecord,
+  getMonthlyOverview,
+  getWeeklyOverview,
+  getWorkoutWeekStrip,
   mapEscalationTimeline,
   type DashboardPayload,
   type DemoApiResponse,
@@ -55,6 +58,11 @@ type ApiError = {
   error?: string;
   code?: string;
   detail?: string;
+};
+
+type PlanLibraryResponse = {
+  ok: true;
+  plans: PlanRecord[];
 };
 
 type GarminSyncResponse = {
@@ -111,16 +119,6 @@ export function DemoShell({ page }: DemoShellProps) {
     [dashboard],
   );
 
-  const complianceScore = useMemo(() => {
-    if (!dashboard) {
-      return 0;
-    }
-
-    const stagePenalty = (dashboard.escalation.stage - 1) * 12;
-    const debtPenalty = dashboard.debtCount * 10;
-    return Math.max(25, 100 - stagePenalty - debtPenalty);
-  }, [dashboard]);
-
   const countdown = useMemo(() => {
     if (!dashboard || !now) {
       return "Calculating...";
@@ -137,6 +135,14 @@ export function DemoShell({ page }: DemoShellProps) {
   }, [dashboard, now]);
 
   const garminStatus = dashboard?.integrations?.garmin;
+  const weeklyOverview = useMemo(
+    () => getWeeklyOverview(selectedPlan?.goalType ?? "Seeded Demo"),
+    [selectedPlan],
+  );
+  const monthlyOverview = useMemo(
+    () => getMonthlyOverview(selectedPlan?.goalType ?? "Seeded Demo"),
+    [selectedPlan],
+  );
 
   useEffect(() => {
     setNow(Date.now());
@@ -173,12 +179,14 @@ export function DemoShell({ page }: DemoShellProps) {
     setError(null);
 
     try {
-      const [demoResponse, garminResponse] = await Promise.all([
+      const [demoResponse, garminResponse, plansResponse] = await Promise.all([
         fetch("/api/demo"),
         fetch("/api/garmin-demo"),
+        fetch("/api/plans"),
       ]);
       const data = (await demoResponse.json()) as DemoApiResponse | ApiError;
       const garminData = (await garminResponse.json()) as GarminDemoResponse | ApiError;
+      const plansData = (await plansResponse.json()) as PlanLibraryResponse | ApiError;
 
       if (!demoResponse.ok || !("ok" in data)) {
         throw new Error(getApiErrorMessage(data, "Failed to load demo state"));
@@ -186,9 +194,15 @@ export function DemoShell({ page }: DemoShellProps) {
       if (!garminResponse.ok || !("provider" in garminData)) {
         throw new Error(getApiErrorMessage(garminData, "Failed to load Garmin demo data"));
       }
+      if (!plansResponse.ok || !("plans" in plansData)) {
+        throw new Error(getApiErrorMessage(plansData, "Failed to load plans"));
+      }
 
       const localPlans = readStoredPlans();
-      const mergedPlans = mergePlans(data.demoPlan, localPlans);
+      const mergedPlans = mergePlans(data.demoPlan, [
+        ...plansData.plans,
+        ...localPlans,
+      ]);
       const storedSelectedPlanId = readSelectedPlanId();
       const initialSelectedPlanId =
         storedSelectedPlanId &&
@@ -376,7 +390,7 @@ export function DemoShell({ page }: DemoShellProps) {
 
   return (
     <main className="grain relative min-h-screen overflow-hidden">
-      <div className="mx-auto flex w-full max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-7xl flex-col px-4 py-4 sm:px-5 lg:px-6">
         <header className="panel sticky top-4 z-30 rounded-full px-4 py-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
@@ -409,9 +423,9 @@ export function DemoShell({ page }: DemoShellProps) {
         </header>
 
         {error ? (
-          <section className="mt-6 rounded-[1.75rem] border border-[color:var(--danger)] bg-[#fff0ec] p-4 text-sm text-[color:var(--danger)]">
+          <section className="mt-4 rounded-[1.5rem] border border-[color:var(--danger)] bg-[#fff0ec] p-3 text-sm text-[color:var(--danger)]">
             <p className="font-semibold">Backend integration issue</p>
-            <p className="mt-1 leading-6">{error}</p>
+            <p className="mt-1 leading-5">{error}</p>
             <p className="mt-2 text-xs uppercase tracking-[0.16em]">
               Check that the backend is running and `MONGODB_URI` is configured.
             </p>
@@ -419,13 +433,13 @@ export function DemoShell({ page }: DemoShellProps) {
         ) : null}
 
         {page === "create-plan" ? (
-          <section className="pb-6 pt-8">
+          <section className="pb-4 pt-5">
             <OnboardingWizard onFinish={handlePlanCreated} />
           </section>
         ) : null}
 
         {page === "plans" ? (
-          <section className="grid gap-6 pb-6 pt-8 xl:grid-cols-[0.95fr_1.05fr]">
+          <section className="grid gap-4 pb-4 pt-5 xl:grid-cols-[0.9fr_1.1fr]">
             <PlansListPanel
               plans={plans}
               selectedPlanId={selectedPlanId}
@@ -437,12 +451,12 @@ export function DemoShell({ page }: DemoShellProps) {
         ) : null}
 
         {page === "today" ? (
-          <section className="grid gap-6 pb-6 pt-8 lg:grid-cols-[1.05fr_0.95fr]">
+          <section className="grid gap-4 pb-4 pt-5 lg:grid-cols-[1.05fr_0.95fr]">
             <div>
               <TodayMissionPanel
                 dashboard={dashboard}
                 selectedPlan={selectedPlan}
-                complianceScore={complianceScore}
+                stripClock={now ?? Date.now()}
                 countdown={countdown}
                 actionPending={actionPending}
                 onDone={submitCheckin}
@@ -450,15 +464,17 @@ export function DemoShell({ page }: DemoShellProps) {
               />
             </div>
 
-            <div className="grid gap-6">
+            <div className="grid gap-4">
               <ActionItemsPanel dashboard={dashboard} />
+              <WeeklyPlanPanel items={weeklyOverview} />
+              <MonthlyPlanPanel items={monthlyOverview} />
               <EscalationTimelinePanel timeline={escalationTimeline} />
             </div>
           </section>
         ) : null}
 
         {page === "integrations" ? (
-          <section className="grid gap-6 pb-6 pt-8 lg:grid-cols-[0.9fr_1.1fr]">
+          <section className="grid gap-4 pb-4 pt-5 lg:grid-cols-[0.9fr_1.1fr]">
             <IntegrationStatusPanel
               integrations={integrations}
               selectedPlan={selectedPlan}
@@ -493,36 +509,36 @@ function PlansListPanel({
   onSelectPlan: (plan: PlanRecord) => Promise<void>;
 }) {
   return (
-    <section className="panel rounded-[2rem] p-5 sm:p-6">
+    <section className="panel rounded-[1.75rem] p-4 sm:p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="label text-[color:var(--signal)]">Saved plans</p>
-          <h2 className="mt-2 text-3xl font-semibold tracking-[-0.05em]">
-            Every configuration in one place
+          <h2 className="mt-1 text-2xl font-semibold tracking-[-0.05em]">
+            Plan library
           </h2>
         </div>
-        <span className="rounded-full bg-black px-4 py-2 text-sm font-semibold text-white">
+        <span className="rounded-full bg-black px-3 py-1.5 text-xs font-semibold text-white">
           {plans.length} total
         </span>
       </div>
 
-      <div className="mt-6 grid gap-4">
+      <div className="mt-4 grid gap-3">
         {plans.map((plan) => (
           <button
             key={plan.id}
             type="button"
             onClick={() => void onSelectPlan(plan)}
-            className={`rounded-[1.5rem] border p-4 text-left transition ${
+            className={`rounded-[1.25rem] border p-3 text-left transition ${
               selectedPlanId === plan.id
                 ? "border-black bg-black text-white"
                 : "border-[color:var(--line)] bg-white/70 hover:border-black/30"
             }`}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            >
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-lg font-semibold">{plan.title}</p>
-                <p className="mt-1 text-sm opacity-80">
-                  {plan.goalType} / target {plan.targetDate}
+                <p className="text-base font-semibold">{plan.title}</p>
+                <p className="mt-1 text-xs opacity-80">
+                  {plan.goalType} / {plan.targetDate}
                 </p>
               </div>
               <span
@@ -551,25 +567,25 @@ function PlansListPanel({
 }
 
 function PlanDetailsPanel({ selectedPlan }: { selectedPlan: PlanRecord | null }) {
-  if (!selectedPlan) {
+      if (!selectedPlan) {
     return (
-      <section className="panel rounded-[2rem] p-6">
+      <section className="panel rounded-[1.75rem] p-4">
         <p className="text-sm text-[color:var(--muted)]">Select a plan to inspect its settings.</p>
       </section>
     );
   }
 
   return (
-    <section className="panel rounded-[2rem] p-6 sm:p-7">
+    <section className="panel rounded-[1.75rem] p-4 sm:p-5">
       <p className="label text-[color:var(--signal)]">Selected plan</p>
-      <h2 className="mt-2 text-3xl font-semibold tracking-[-0.05em]">
+      <h2 className="mt-1 text-2xl font-semibold tracking-[-0.05em]">
         {selectedPlan.title}
       </h2>
-      <p className="mt-3 max-w-3xl text-base leading-7 text-[color:var(--muted)]">
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:var(--muted)]">
         {selectedPlan.summary}
       </p>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
         <DetailCard label="Goal" value={selectedPlan.goalType} />
         <DetailCard label="Target date" value={selectedPlan.targetDate} />
         <DetailCard label="Phone" value={selectedPlan.phoneNumber} />
@@ -581,7 +597,7 @@ function PlanDetailsPanel({ selectedPlan }: { selectedPlan: PlanRecord | null })
         <DetailCard label="Escalation" value={selectedPlan.escalationTolerance} />
         <DetailCard label="Channels" value={selectedPlan.channels.join(", ")} />
         <DetailCard label="Trigger" value={selectedPlan.trigger} />
-        <DetailCard label="Next mission" value={selectedPlan.nextMission} />
+        <DetailCard label="Current workout" value={selectedPlan.nextMission} />
       </div>
     </section>
   );
@@ -590,7 +606,7 @@ function PlanDetailsPanel({ selectedPlan }: { selectedPlan: PlanRecord | null })
 function TodayMissionPanel({
   dashboard,
   selectedPlan,
-  complianceScore,
+  stripClock,
   countdown,
   actionPending,
   onDone,
@@ -598,66 +614,82 @@ function TodayMissionPanel({
 }: {
   dashboard: DashboardPayload | null;
   selectedPlan: PlanRecord | null;
-  complianceScore: number;
+  stripClock: number;
   countdown: string;
   actionPending: string | null;
   onDone: (status: "done" | "missed") => Promise<void>;
   onRecovery: (action: "accept" | "snooze") => Promise<void>;
 }) {
   const taskStatus = dashboard?.todayTask.status ?? "pending";
+  const weekStrip = useMemo(
+    () =>
+      getWorkoutWeekStrip(
+        stripClock,
+        dashboard?.todayTask.status ?? null,
+      ),
+    [stripClock, dashboard?.todayTask.status],
+  );
 
   return (
-    <section className="panel rounded-[2rem] p-6 sm:p-8">
-      <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-        <div>
-          <p className="label text-[color:var(--signal)]">Today&apos;s mission</p>
-          <h2 className="mt-2 text-4xl font-semibold tracking-[-0.05em]">
-            {dashboard?.todayTask.title ?? "No mission loaded"}
-          </h2>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-[color:var(--muted)]">
-            {selectedPlan?.nextMission ??
-              "Select a saved plan or create one to personalize the daily view."}
-          </p>
-        </div>
-
-        <div className="metric-ring flex h-36 w-36 items-center justify-center rounded-full">
-          <div className="flex h-26 w-26 flex-col items-center justify-center rounded-full bg-[#fff7ea] text-center shadow-inner">
-            <span className="text-3xl font-semibold tracking-[-0.06em]">
-              {complianceScore}%
-            </span>
-            <span className="label text-[color:var(--muted)]">Compliance</span>
-          </div>
-        </div>
+    <section className="panel rounded-[1.75rem] p-4 sm:p-5">
+      <div>
+        <p className="label text-[color:var(--signal)]">Today&apos;s workout</p>
+        <h2 className="mt-1 text-3xl font-semibold tracking-[-0.05em]">
+          {dashboard?.todayTask.title ?? "No mission loaded"}
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted)]">
+          {selectedPlan?.nextMission ??
+            "Select a saved plan or create one to personalize the daily view."}
+        </p>
       </div>
 
-      <div className="mt-8 grid gap-4 md:grid-cols-3">
-        <MetricCard
-          label="Countdown"
-          value={countdown}
-          detail={
-            dashboard
-              ? `Due ${new Date(dashboard.todayTask.dueAt).toLocaleString()}`
-              : "Waiting for backend dashboard"
-          }
-        />
-        <MetricCard
-          label="Task status"
-          value={taskStatus}
-          detail="This is the live state of today's assignment."
-        />
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <MetricCard label="Countdown" value={countdown} />
+        <MetricCard label="Task status" value={taskStatus} />
         <MetricCard
           label="Debt"
           value={dashboard ? `${dashboard.debtCount}` : "--"}
-          detail="Unresolved misses the coach still wants cleared."
         />
       </div>
 
-      <div className="mt-6 grid gap-4 xl:grid-cols-[1fr_0.95fr]">
-        <div className="rounded-[1.75rem] border border-[color:var(--line)] bg-white/68 p-5">
+      <div className="mt-4 rounded-[1.25rem] border border-[color:var(--line)] bg-white/68 p-3">
+        <p className="label text-[color:var(--muted)]">Seven-day check-in</p>
+        <div className="mt-3 flex justify-between gap-1 sm:gap-2">
+          {weekStrip.map((day) => (
+            <div
+              key={day.key}
+              className="flex min-w-0 flex-1 flex-col items-center gap-1.5"
+            >
+              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--muted)]">
+                {day.weekday}
+              </span>
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[color:var(--line)] text-base leading-none"
+                aria-label={
+                  day.marker === "done"
+                    ? `${day.weekday}: completed`
+                    : day.marker === "missed"
+                      ? `${day.weekday}: missed`
+                      : `${day.weekday}: no result yet`
+                }
+              >
+                {day.marker === "done" ? (
+                  <span className="text-[color:var(--success)]">✓</span>
+                ) : day.marker === "missed" ? (
+                  <span className="text-[color:var(--danger)]">✗</span>
+                ) : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-[1fr_0.95fr]">
+        <div className="rounded-[1.5rem] border border-[color:var(--line)] bg-white/68 p-4">
           <p className="label text-[color:var(--muted)]">Action items</p>
-          <div className="mt-4 grid gap-3">
+          <div className="mt-3 grid gap-2">
             <ActionRow
-              title={dashboard?.todayTask.title ?? "Today's assignment"}
+              title={dashboard?.todayTask.title ?? "Today's workout"}
               detail={countdown}
               status={dashboard?.todayTask.status ?? "pending"}
             />
@@ -671,12 +703,12 @@ function TodayMissionPanel({
             />
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-3">
+          <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => void onDone("done")}
               disabled={!dashboard || actionPending !== null}
-              className="rounded-full bg-black px-5 py-3 font-medium text-white disabled:opacity-50"
+              className="rounded-full bg-black px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
             >
               {actionPending === "done" ? "Saving..." : "Mark done"}
             </button>
@@ -684,26 +716,26 @@ function TodayMissionPanel({
               type="button"
               onClick={() => void onDone("missed")}
               disabled={!dashboard || actionPending !== null}
-              className="rounded-full border border-[color:var(--danger)] px-5 py-3 font-medium text-[color:var(--danger)] disabled:opacity-50"
+              className="rounded-full border border-[color:var(--danger)] px-4 py-2.5 text-sm font-medium text-[color:var(--danger)] disabled:opacity-50"
             >
               {actionPending === "missed" ? "Logging..." : "Mark missed"}
             </button>
           </div>
         </div>
 
-        <div className="rounded-[1.75rem] border border-[color:var(--line)] bg-[#15110d] p-5 text-[#f8f1e5]">
+        <div className="rounded-[1.5rem] border border-[color:var(--line)] bg-[#15110d] p-4 text-[#f8f1e5]">
           <p className="label text-[#ffb48f]">Recovery action</p>
-          <p className="mt-3 text-base leading-7">
+          <p className="mt-2 text-sm leading-6">
             {dashboard?.recoveryAction?.description ??
               "No recovery action is currently active."}
           </p>
 
-          <div className="mt-5 flex flex-wrap gap-3">
+          <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => void onRecovery("accept")}
               disabled={!dashboard?.recoveryAction || actionPending !== null}
-              className="rounded-full bg-[#f8f1e5] px-5 py-3 font-medium text-black disabled:opacity-50"
+              className="rounded-full bg-[#f8f1e5] px-4 py-2.5 text-sm font-medium text-black disabled:opacity-50"
             >
               {actionPending === "accept" ? "Applying..." : "Accept recovery"}
             </button>
@@ -711,7 +743,7 @@ function TodayMissionPanel({
               type="button"
               onClick={() => void onRecovery("snooze")}
               disabled={!dashboard?.recoveryAction || actionPending !== null}
-              className="rounded-full border border-white/20 px-5 py-3 font-medium text-[#f8f1e5] disabled:opacity-50"
+              className="rounded-full border border-white/20 px-4 py-2.5 text-sm font-medium text-[#f8f1e5] disabled:opacity-50"
             >
               {actionPending === "snooze" ? "Saving..." : "Snooze"}
             </button>
@@ -725,7 +757,7 @@ function TodayMissionPanel({
 function ActionItemsPanel({ dashboard }: { dashboard: DashboardPayload | null }) {
   const items = [
     {
-      title: "Today's mission",
+      title: "Today's workout",
       detail: dashboard?.todayTask.title ?? "Load a plan to see today's assignment.",
       status: dashboard?.todayTask.status ?? "pending",
     },
@@ -746,12 +778,9 @@ function ActionItemsPanel({ dashboard }: { dashboard: DashboardPayload | null })
   ];
 
   return (
-    <section className="panel rounded-[2rem] p-6">
+    <section className="panel rounded-[1.75rem] p-4">
       <p className="label text-[color:var(--muted)]">Daily status</p>
-      <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
-        What the user should work on now
-      </h3>
-      <div className="mt-5 grid gap-3">
+      <div className="mt-3 grid gap-2">
         {items.map((item) => (
           <ActionRow
             key={item.title}
@@ -765,26 +794,76 @@ function ActionItemsPanel({ dashboard }: { dashboard: DashboardPayload | null })
   );
 }
 
+function WeeklyPlanPanel({
+  items,
+}: {
+  items: ReturnType<typeof getWeeklyOverview>;
+}) {
+  return (
+    <section className="panel rounded-[1.75rem] p-4">
+      <p className="label text-[color:var(--muted)]">Next 7 Days</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {items.map((item) => (
+          <div
+            key={`${item.day}-${item.focus}`}
+            className="rounded-[1.25rem] border border-[color:var(--line)] bg-white/72 p-3"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold">{item.day}</p>
+              <p className="text-xs text-[color:var(--muted)]">{item.commitment}</p>
+            </div>
+            <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">
+              {item.focus}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MonthlyPlanPanel({
+  items,
+}: {
+  items: ReturnType<typeof getMonthlyOverview>;
+}) {
+  return (
+    <section className="panel rounded-[1.75rem] p-4">
+      <p className="label text-[color:var(--muted)]">Plan Progression</p>
+      <div className="mt-3 grid gap-2">
+        {items.map((item) => (
+          <div
+            key={item.month}
+            className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-[color:var(--line)] bg-white/72 px-3 py-2.5"
+          >
+            <p className="text-sm font-semibold">{item.month}</p>
+            <p className="text-xs leading-5 text-[color:var(--muted)]">
+              {item.focus}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function EscalationTimelinePanel({
   timeline,
 }: {
   timeline: ReturnType<typeof mapEscalationTimeline>;
 }) {
   return (
-    <section className="panel rounded-[2rem] p-6">
+    <section className="panel rounded-[1.75rem] p-4">
       <p className="label text-[color:var(--muted)]">Escalation timeline</p>
-      <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
-        Deterministic pressure ladder
-      </h3>
-      <div className="mt-5 grid gap-3">
+      <div className="mt-3 grid gap-2">
         {timeline.map((stage) => (
           <div
             key={stage.id}
-            className="rounded-[1.5rem] border border-[color:var(--line)] bg-white/68 p-4"
+            className="rounded-[1.25rem] border border-[color:var(--line)] bg-white/68 p-3"
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-sm font-semibold text-white">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black text-xs font-semibold text-white">
                   {stage.id}
                 </div>
                 <div>
@@ -794,8 +873,8 @@ function EscalationTimelinePanel({
               </div>
               <StatusPill status={stage.status} />
             </div>
-            <p className="mt-3 text-sm font-medium">{stage.scheduledFor}</p>
-            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+            <p className="mt-2 text-xs font-medium">{stage.scheduledFor}</p>
+            <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">
               {stage.note}
             </p>
           </div>
@@ -829,43 +908,40 @@ function IntegrationStatusPanel({
   ];
 
   return (
-    <section className="panel rounded-[2rem] p-6 sm:p-7">
+    <section className="panel rounded-[1.75rem] p-4 sm:p-5">
       <p className="label text-[color:var(--signal)]">Connected systems</p>
-      <div className="mt-6 grid gap-4">
+      <div className="mt-4 grid gap-3">
         {connectionCards.map((item) => (
           <div
             key={item.name}
-            className="rounded-[1.5rem] border border-[color:var(--line)] bg-white/70 p-5"
+            className="rounded-[1.25rem] border border-[color:var(--line)] bg-white/70 p-3"
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-xl font-semibold tracking-[-0.04em]">{item.name}</h3>
+              <h3 className="text-base font-semibold tracking-[-0.04em]">{item.name}</h3>
               <StateBadge state={item.state} />
             </div>
-            <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">
+            <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">
               {item.detail}
             </p>
           </div>
         ))}
       </div>
 
-      <div className="mt-6 rounded-[1.75rem] border border-[color:var(--line)] bg-[#15110d] p-5 text-[#f8f1e5]">
+      <div className="mt-4 rounded-[1.5rem] border border-[color:var(--line)] bg-[#15110d] p-4 text-[#f8f1e5]">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="label text-[#ffb48f]">Google Calendar</p>
-            <p className="mt-2 text-sm leading-6 text-[#dcc8bd]">
-              Keep the calendar interaction available, but tucked into its own page.
-            </p>
           </div>
           <button
             type="button"
             onClick={() => setCalendarConnected(true)}
-            className="rounded-full bg-[#f8f1e5] px-5 py-3 font-medium text-black"
+            className="rounded-full bg-[#f8f1e5] px-4 py-2 text-sm font-medium text-black"
           >
             {calendarConnected ? "Connected" : "Connect"}
           </button>
         </div>
 
-        <p className="mt-4 text-sm leading-6">
+        <p className="mt-3 text-xs leading-5">
           Calendar target:{" "}
           <span className="font-semibold">
             {selectedPlan?.googleCalendarEmail ?? "Not provided yet"}
@@ -886,11 +962,9 @@ function GarminPanel({
   onRunScenario,
 }: {
   garminDemo: GarminDemoResponse | null;
-  garminStatus: DashboardPayload["integrations"] extends infer T
-    ? T extends { garmin?: infer G }
-      ? G
-      : never
-    : never;
+  garminStatus?: NonNullable<
+    NonNullable<DashboardPayload["integrations"]>["garmin"]
+  >;
   garminPending: string | null;
   garminResult: GarminSyncResponse | null;
   dashboard: DashboardPayload | null;
@@ -898,21 +972,18 @@ function GarminPanel({
   onRunScenario: (scenario: GarminDemoScenario) => Promise<void>;
 }) {
   return (
-    <section className="panel rounded-[2rem] p-6 sm:p-7">
+    <section className="panel rounded-[1.75rem] p-4 sm:p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <p className="label text-[color:var(--signal)]">Garmin demo simulator</p>
-          <h2 className="mt-2 text-3xl font-semibold tracking-[-0.05em]">
-            Believable watch metrics without real credentials
-          </h2>
-          <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">
+          <p className="label text-[color:var(--signal)]">Garmin integration</p>
+          <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">
             {garminDemo?.note ??
-              "Load Garmin-style steps, sleep, stress, and activity summaries from seeded data."}
+              "Garmin activity can confirm whether the workout happened."}
           </p>
         </div>
 
-        <div className="rounded-[1.25rem] bg-[#15110d] px-4 py-3 text-sm text-[#f8f1e5]">
-          <p className="label text-[#ffb48f]">Backend status</p>
+        <div className="rounded-[1.25rem] bg-[#15110d] px-3 py-2 text-xs text-[#f8f1e5]">
+          <p className="label text-[#ffb48f]">Status</p>
           <p className="mt-2 font-semibold">
             {garminStatus
               ? `${garminStatus.status} / ${garminStatus.strikeCount} strike${garminStatus.strikeCount === 1 ? "" : "s"}`
@@ -926,34 +997,30 @@ function GarminPanel({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 md:grid-cols-4">
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
         <MetricCard
           label="Steps"
           value={garminDemo ? garminDemo.dailySnapshot.steps.toLocaleString() : "--"}
-          detail="Daily movement total"
         />
         <MetricCard
           label="Body battery"
           value={garminDemo ? `${garminDemo.dailySnapshot.bodyBattery}` : "--"}
-          detail="Recovery-style energy signal"
         />
         <MetricCard
           label="Stress"
           value={garminDemo ? `${garminDemo.dailySnapshot.averageStress}` : "--"}
-          detail="Average stress score"
         />
         <MetricCard
           label="Expected"
           value={dashboard?.todayTask.title ?? "--"}
-          detail="Current workout expectation from the plan."
         />
       </div>
 
-      <div className="mt-5 grid gap-3">
+      <div className="mt-4 grid gap-2">
         {garminDemo?.scenarios.map((scenario) => (
           <div
             key={scenario.id}
-            className="rounded-[1.25rem] border border-[color:var(--line)] bg-white p-4"
+            className="rounded-[1.25rem] border border-[color:var(--line)] bg-white p-3"
           >
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
@@ -969,12 +1036,8 @@ function GarminPanel({
                     {scenario.expectedOutcome}
                   </span>
                 </div>
-                <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">
                   {scenario.summary}
-                </p>
-                <p className="mt-3 text-sm leading-6">
-                  <span className="font-semibold">Judge story:</span>{" "}
-                  {scenario.coachExpectation}
                 </p>
               </div>
 
@@ -982,7 +1045,7 @@ function GarminPanel({
                 type="button"
                 onClick={() => void onRunScenario(scenario)}
                 disabled={!activeUserId || garminPending !== null}
-                className="rounded-full bg-black px-5 py-3 font-medium text-white disabled:opacity-50"
+                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
                 {garminPending === scenario.id ? "Syncing..." : "Run scenario"}
               </button>
@@ -992,10 +1055,10 @@ function GarminPanel({
       </div>
 
       {garminResult ? (
-        <div className="mt-4 rounded-[1.25rem] border border-[color:var(--line)] bg-[#15110d] p-4 text-[#f8f1e5]">
+        <div className="mt-3 rounded-[1.25rem] border border-[color:var(--line)] bg-[#15110d] p-3 text-[#f8f1e5]">
           <p className="label text-[#ffb48f]">Latest Garmin sync result</p>
-          <p className="mt-3 text-sm leading-6">{garminResult.feedback}</p>
-          <p className="mt-3 text-xs uppercase tracking-[0.16em] text-[#dcc8bd]">
+          <p className="mt-2 text-xs leading-5">{garminResult.feedback}</p>
+          <p className="mt-2 text-[11px] uppercase tracking-[0.16em] text-[#dcc8bd]">
             Stage {garminResult.stage} / debt {garminResult.debtCount} /{" "}
             {garminResult.matched
               ? "matched"
@@ -1009,39 +1072,30 @@ function GarminPanel({
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
+function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[1.5rem] border border-[color:var(--line)] bg-white/68 p-5">
+    <div className="rounded-[1.25rem] border border-[color:var(--line)] bg-white/68 p-3">
       <p className="label text-[color:var(--muted)]">{label}</p>
       <p
-        className={`mt-3 break-words font-semibold tracking-[-0.05em] ${
+        className={`mt-2 break-words font-semibold tracking-[-0.05em] ${
           value.length > 28
-            ? "text-lg sm:text-xl"
+            ? "text-base sm:text-lg"
             : value.length > 18
-              ? "text-2xl"
-              : "text-3xl"
+              ? "text-xl"
+              : "text-2xl"
         }`}
       >
         {value}
       </p>
-      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{detail}</p>
     </div>
   );
 }
 
 function DetailCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[1.5rem] border border-[color:var(--line)] bg-white/72 p-4">
+    <div className="rounded-[1.25rem] border border-[color:var(--line)] bg-white/72 p-3">
       <p className="label text-[color:var(--muted)]">{label}</p>
-      <p className="mt-2 text-sm leading-6">{value}</p>
+      <p className="mt-1 text-xs leading-5">{value}</p>
     </div>
   );
 }
@@ -1056,12 +1110,12 @@ function ActionRow({
   status: string;
 }) {
   return (
-    <div className="rounded-[1.5rem] border border-[color:var(--line)] bg-white/72 p-4">
+    <div className="rounded-[1.25rem] border border-[color:var(--line)] bg-white/72 p-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="font-semibold">{title}</p>
+        <p className="text-sm font-semibold">{title}</p>
         <StatusPill status={status} />
       </div>
-      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">{detail}</p>
+      <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">{detail}</p>
     </div>
   );
 }
@@ -1162,6 +1216,7 @@ function mergePlans(demoPlan?: PlanRecord, plans: PlanRecord[] = []) {
 function getApiErrorMessage(
   value:
     | DemoApiResponse
+    | PlanLibraryResponse
     | DashboardPayload
     | GarminDemoResponse
     | GarminSyncResponse

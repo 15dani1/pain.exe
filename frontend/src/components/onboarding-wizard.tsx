@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { startTransition, useMemo, useState } from "react";
 import {
-  getTrainingPlanPreview,
+  getMonthlyOverview,
+  getWeeklyOverview,
   goalOptions,
   onboardingDefaults,
   type OnboardingPayload,
@@ -35,8 +37,13 @@ export function OnboardingWizard({ onFinish }: Props) {
     [stepIndex],
   );
 
-  const previewItems = useMemo(
-    () => getTrainingPlanPreview(form.goalType),
+  const weeklyOverview = useMemo(
+    () => getWeeklyOverview(form.goalType),
+    [form.goalType],
+  );
+
+  const monthlyOverview = useMemo(
+    () => getMonthlyOverview(form.goalType),
     [form.goalType],
   );
 
@@ -98,26 +105,24 @@ export function OnboardingWizard({ onFinish }: Props) {
   return (
     <section
       id="onboarding"
-      className="panel grain relative overflow-hidden rounded-[2rem] p-5 text-sm text-[color:var(--foreground)] sm:p-6"
+      className="panel grain relative overflow-hidden rounded-[1.75rem] p-4 text-sm text-[color:var(--foreground)] sm:p-5"
     >
-      <div className="relative z-10 flex flex-col gap-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="relative z-10 flex flex-col gap-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="label text-[color:var(--signal)]">Create a new plan</p>
-            <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">
-              Onboard, preview, then commit
+            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em]">
+              Build the plan
             </h2>
-            <p className="mt-2 max-w-xl text-base leading-7 text-[color:var(--muted)]">
-              A new trainee should be able to define the plan, validate what the
-              experience will feel like, and understand the training cadence
-              before pressing create.
+            <p className="mt-1 max-w-xl text-sm leading-6 text-[color:var(--muted)]">
+              Define the goal, schedule, and outreach style.
             </p>
           </div>
 
-          <div className="rounded-[1.5rem] border border-[color:var(--line-strong)] bg-white/70 px-4 py-3">
+          <div className="rounded-[1.25rem] border border-[color:var(--line-strong)] bg-white/70 px-3 py-2">
             <p className="label text-[color:var(--muted)]">Step {stepIndex + 1}</p>
-            <p className="mt-1 text-lg font-semibold">{currentStep}</p>
-            <div className="mt-3 h-2 w-40 rounded-full bg-black/10">
+            <p className="mt-1 text-base font-semibold">{currentStep}</p>
+            <div className="mt-2 h-2 w-28 rounded-full bg-black/10">
               <div
                 className="h-full rounded-full bg-[color:var(--signal)] transition-all"
                 style={{ width: `${progress}%` }}
@@ -126,26 +131,26 @@ export function OnboardingWizard({ onFinish }: Props) {
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-5">
+        <div className="grid gap-2 sm:grid-cols-5">
           {steps.map((step, index) => (
             <button
               key={step}
               type="button"
               onClick={() => setStepIndex(index)}
-              className={`rounded-2xl border px-4 py-3 text-left transition ${
+              className={`rounded-[1.25rem] border px-3 py-2.5 text-left transition ${
                 index === stepIndex
                   ? "border-black bg-black text-white"
                   : "border-[color:var(--line)] bg-white/60 hover:border-black/30"
               }`}
             >
               <p className="label">{String(index + 1).padStart(2, "0")}</p>
-              <p className="mt-2 text-base font-semibold">{step}</p>
+              <p className="mt-1 text-sm font-semibold">{step}</p>
             </button>
           ))}
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-          <div className="rounded-[1.75rem] border border-[color:var(--line)] bg-white/72 p-5 sm:p-6">
+        <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
+          <div className="rounded-[1.5rem] border border-[color:var(--line)] bg-white/72 p-4 sm:p-5">
             {currentStep === "Mission" ? (
               <div className="grid gap-4">
                 <Field label="Name">
@@ -302,58 +307,84 @@ export function OnboardingWizard({ onFinish }: Props) {
             ) : null}
 
             {currentStep === "Preview" ? (
-              <div className="grid gap-5">
-                <div className="rounded-[1.5rem] border border-[color:var(--line)] bg-[#fffaf1] p-4">
-                  <p className="label text-[color:var(--signal)]">Plan validation</p>
-                  <p className="mt-2 text-base leading-7">
-                    You&apos;re signing up for a plan that uses{" "}
-                    <span className="font-semibold">{form.goalType}</span> training,
-                    escalation via <span className="font-semibold">{form.channels.join(", ")}</span>,
-                    and calendar pressure aimed at <span className="font-semibold">{form.googleCalendarEmail}</span>.
+              <div className="grid gap-3">
+                <div className="rounded-[1.25rem] border border-[color:var(--line)] bg-[#fffaf1] p-3">
+                  <p className="label text-[color:var(--signal)]">What the cadence looks like</p>
+                  <p className="mt-2 text-sm leading-6">
+                    A typical week, the time commitment, and how the plan evolves over time.
                   </p>
                 </div>
 
-                <div className="grid gap-3">
-                  {previewItems.map((item) => (
-                    <div
-                      key={`${item.day}-${item.title}`}
-                      className="rounded-[1.5rem] border border-[color:var(--line)] bg-white p-4"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="font-semibold">{item.day}</p>
-                        <span className="rounded-full bg-[#efe2cf] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em]">
-                          Sample block
-                        </span>
+                <div className="rounded-[1.25rem] border border-[color:var(--line)] bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold">Next 7 days</p>
+                    <span className="rounded-full bg-[#efe2cf] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em]">
+                      Weekly view
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    {weeklyOverview.map((item) => (
+                      <div
+                        key={`${item.day}-${item.focus}`}
+                        className="rounded-[1rem] border border-[color:var(--line)] bg-[#fffaf1] p-3"
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--signal)]">
+                          {item.day}
+                        </p>
+                        <p className="mt-1 text-sm font-semibold">{item.focus}</p>
+                        <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">
+                          {item.commitment}
+                        </p>
                       </div>
-                      <p className="mt-2 text-lg font-medium">{item.title}</p>
-                      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                        {item.detail}
-                      </p>
-                      <p className="mt-2 text-sm leading-6">
-                        <span className="font-semibold">Why it exists:</span> {item.intent}
-                      </p>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
 
-                <div className="rounded-[1.5rem] border border-[color:var(--line)] bg-white p-4">
-                  <p className="label text-[color:var(--signal)]">What the experience feels like</p>
-                  <ul className="mt-3 grid gap-3 text-sm leading-6">
-                    <li>Calendar blocks appear before the first week is over.</li>
-                    <li>Missed sessions become visible debt, not silent failures.</li>
-                    <li>Texts and calls escalate only if you allow those channels.</li>
-                    <li>The coach keeps continuity and references recent misses.</li>
-                  </ul>
+                <div className="rounded-[1.25rem] border border-[color:var(--line)] bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold">Plan progression</p>
+                    <span className="rounded-full bg-[#efe2cf] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em]">
+                      Monthly view
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {monthlyOverview.map((item) => (
+                      <div
+                        key={item.month}
+                        className="flex items-center justify-between gap-3 rounded-[1rem] border border-[color:var(--line)] bg-[#fffaf1] px-3 py-2"
+                      >
+                        <p className="text-sm font-semibold">{item.month}</p>
+                        <p className="text-xs leading-5 text-[color:var(--muted)]">
+                          {item.focus}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-[1.25rem] border border-[color:var(--line)] bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold">Your setup</p>
+                    <span className="rounded-full bg-[#efe2cf] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em]">
+                      Ready
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <PreviewFact label="Goal" value={form.goalType} />
+                    <PreviewFact label="Target" value={form.targetDate} />
+                    <PreviewFact label="Availability" value={form.weeklyAvailability} />
+                    <PreviewFact label="Channels" value={form.channels.join(", ")} />
+                  </div>
                 </div>
               </div>
             ) : null}
 
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={() => setStepIndex((value) => Math.max(0, value - 1))}
                 disabled={stepIndex === 0}
-                className="rounded-full border border-[color:var(--line-strong)] px-5 py-3 font-medium disabled:opacity-40"
+                className="rounded-full border border-[color:var(--line-strong)] px-4 py-2.5 text-sm font-medium disabled:opacity-40"
               >
                 Back
               </button>
@@ -364,7 +395,7 @@ export function OnboardingWizard({ onFinish }: Props) {
                   onClick={() =>
                     setStepIndex((value) => Math.min(steps.length - 1, value + 1))
                   }
-                  className="rounded-full bg-black px-6 py-3 font-medium text-white"
+                  className="rounded-full bg-black px-5 py-2.5 text-sm font-medium text-white"
                 >
                   Next step
                 </button>
@@ -373,7 +404,7 @@ export function OnboardingWizard({ onFinish }: Props) {
                   type="button"
                   onClick={submit}
                   disabled={submitting}
-                  className="rounded-full bg-[color:var(--signal)] px-6 py-3 font-medium text-white disabled:opacity-60"
+                  className="rounded-full bg-[color:var(--signal)] px-5 py-2.5 text-sm font-medium text-white disabled:opacity-60"
                 >
                   {submitting ? "Generating..." : "Create plan"}
                 </button>
@@ -381,9 +412,9 @@ export function OnboardingWizard({ onFinish }: Props) {
             </div>
           </div>
 
-          <aside className="rounded-[1.75rem] border border-[color:var(--line)] bg-[#1a1714] p-5 text-[#f8f1e5] sm:p-6">
+          <aside className="rounded-[1.5rem] border border-[color:var(--line)] bg-[#1a1714] p-4 text-[#f8f1e5] sm:p-5">
             <p className="label text-[#ffb48f]">Selected settings</p>
-            <div className="mt-4 grid gap-3 text-sm">
+            <div className="mt-3 grid gap-2 text-sm">
               <SettingsRow label="Goal" value={form.goalType} />
               <SettingsRow label="Phone" value={form.phoneNumber} />
               <SettingsRow label="Calendar" value={form.googleCalendarEmail} />
@@ -392,42 +423,34 @@ export function OnboardingWizard({ onFinish }: Props) {
               <SettingsRow label="Channels" value={form.channels.join(", ")} />
             </div>
 
-            <div className="mt-5 rounded-[1.5rem] bg-black/25 p-4">
-              <p className="label text-[#ffb48f]">Preview outreach</p>
-              <div className="mt-3 grid gap-3 text-sm text-[#f3ddcf]">
-                <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-3">
-                  <p className="font-semibold">SMS to {form.phoneNumber}</p>
-                  <p className="mt-2 leading-6">
-                    Workout due soon. Confirm the block on your calendar or own the miss.
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-3">
-                  <p className="font-semibold">Call preview</p>
-                  <p className="mt-2 leading-6">
-                    If you ignore the plan, the coach escalates with a short voice follow-up.
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-3">
-                  <p className="font-semibold">Calendar target</p>
-                  <p className="mt-2 leading-6">
-                    Training blocks will be staged for {form.googleCalendarEmail}.
-                  </p>
-                </div>
-              </div>
-            </div>
-
             {result ? (
-              <div className="mt-5 rounded-[1.5rem] border border-white/10 bg-white/8 p-4">
-                <p className="label text-[#ffb48f]">Created</p>
-                <p className="mt-3 font-semibold">{result.nextMission}</p>
-                <p className="mt-3 text-sm leading-6 text-[#d8c3b6]">
-                  {result.summary}
+              <div className="mt-4 rounded-[1.25rem] border border-[#ffb48f]/25 bg-[#2a1d15] p-3">
+                <p className="label text-[#ffb48f]">Plan created</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {form.goalType} is now live.
                 </p>
+                <p className="mt-2 text-xs leading-5 text-[#d8c3b6]">
+                  {result.nextMission}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href="/plans"
+                    className="rounded-full bg-[#f8f1e5] px-3 py-2 text-xs font-semibold text-black"
+                  >
+                    View My Plans
+                  </Link>
+                  <Link
+                    href="/today"
+                    className="rounded-full border border-white/15 px-3 py-2 text-xs font-semibold text-[#f8f1e5]"
+                  >
+                    Go To Today
+                  </Link>
+                </div>
               </div>
             ) : null}
 
             {error ? (
-              <div className="mt-5 rounded-[1.5rem] border border-[#ffb48f]/20 bg-[#44261a] p-4 text-sm text-[#ffd8c7]">
+              <div className="mt-4 rounded-[1.25rem] border border-[#ffb48f]/20 bg-[#44261a] p-3 text-sm text-[#ffd8c7]">
                 <p className="font-semibold">Could not create plan</p>
                 <p className="mt-2 leading-6">{error}</p>
               </div>
@@ -456,9 +479,18 @@ function Field({
 
 function SettingsRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-2">
+    <div className="rounded-[1rem] border border-white/10 bg-white/6 px-3 py-2">
       <p className="label text-[#c7afa1]">{label}</p>
-      <p className="mt-1 font-medium">{value}</p>
+      <p className="mt-1 text-xs font-medium">{value}</p>
+    </div>
+  );
+}
+
+function PreviewFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[1rem] border border-[color:var(--line)] bg-[#fffaf1] px-3 py-2">
+      <p className="label text-[color:var(--muted)]">{label}</p>
+      <p className="mt-1 text-xs leading-5">{value || "--"}</p>
     </div>
   );
 }

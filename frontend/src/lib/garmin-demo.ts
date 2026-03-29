@@ -50,7 +50,7 @@ export type GarminDemoActivity = {
 };
 
 export type GarminDemoResponse = {
-  provider: "Garmin Demo Simulator";
+  provider: "Garmin integration";
   note: string;
   dailySnapshot: GarminDemoDailySnapshot;
   scenarios: GarminDemoScenario[];
@@ -178,9 +178,9 @@ export const garminDemoScenarios: GarminDemoScenario[] = [
 
 export function getGarminDemoPayload(): GarminDemoResponse {
   return {
-    provider: "Garmin Demo Simulator",
+    provider: "Garmin integration",
     note:
-      "Demo-safe Garmin-style metrics shaped around official Garmin developer categories like steps, heart rate, sleep, stress, pulse ox, body battery, respiration, and activity summaries.",
+      "Demo-safe Garmin-style metrics shaped around the signals that confirm workout completion.",
     dailySnapshot: baseSnapshot,
     scenarios: garminDemoScenarios,
   };

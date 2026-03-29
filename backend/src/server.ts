@@ -613,6 +613,114 @@ app.post("/api/onboarding", async (req, res) => {
   }
 });
 
+app.get("/api/plan-library", async (_req, res) => {
+  try {
+    const db = await withMongoRetry(async () => getDb());
+    const [users, goals, workouts, checkIns] = await withMongoRetry(async () =>
+      Promise.all([
+        db.collection("users").find({}).toArray(),
+        db.collection("goals").find({}).sort({ createdAt: -1 }).toArray(),
+        db.collection("plans").find({}).toArray(),
+        db.collection("check_ins").find({}).toArray()
+      ])
+    );
+
+    const usersById = new Map(users.map((user) => [String(user._id), user]));
+    const workoutsByUserId = new Map(workouts.map((workout) => [String(workout.userId), workout]));
+    const checkInsByUserId = new Map<string, number>();
+
+    for (const checkIn of checkIns) {
+      const key = String(checkIn.userId);
+      checkInsByUserId.set(key, (checkInsByUserId.get(key) ?? 0) + 1);
+    }
+
+    const mapped = goals.map((goal) => {
+      const userId = String(goal.userId);
+      const user = usersById.get(userId);
+      const workout = workoutsByUserId.get(userId);
+      const completedEvidence = checkInsByUserId.get(userId) ?? 0;
+
+      return {
+        id: `goal_${userId}`,
+        userId,
+        title: `${String(goal.title ?? "Training goal")} plan`,
+        goalType: String(goal.goalType ?? goal.title ?? "Custom Mission"),
+        targetDate: String(goal.targetDate ?? ""),
+        phoneNumber: String(user?.phoneNumber ?? workout?.phoneNumber ?? ""),
+        googleCalendarEmail: String(user?.googleCalendarEmail ?? workout?.googleCalendarEmail ?? ""),
+        createdAt: goal.createdAt?.toISOString?.() ?? new Date().toISOString(),
+        status:
+          workout?.todayTask?.status === "done"
+            ? "Completed"
+            : workout?.todayTask?.status === "missed"
+              ? "Adjustment Needed"
+              : "Active",
+        nextMission: String(workout?.todayTask?.title ?? workout?.nextMission ?? "Workout to be scheduled"),
+        summary:
+          String(workout?.summary ?? `${user?.name ?? "Trainee"} is working toward ${goal.title ?? "their goal"}.`),
+        baseline: String(goal.baseline ?? workout?.baseline ?? ""),
+        weeklyAvailability: String(goal.weeklyAvailability ?? workout?.weeklyAvailability ?? ""),
+        wakeWindow: String(goal.wakeWindow ?? workout?.wakeWindow ?? ""),
+        injuryLimit: String(goal.injuryLimit ?? workout?.injuryLimit ?? ""),
+        trigger: String(goal.trigger ?? workout?.trigger ?? ""),
+        escalationTolerance: String(goal.escalationTolerance ?? "Measured"),
+        channels: Array.isArray(goal.channels)
+          ? goal.channels
+          : Array.isArray(workout?.channels)
+            ? workout.channels
+            : [],
+        adherenceSummary:
+          completedEvidence > 0
+            ? `${completedEvidence} verified workout${completedEvidence === 1 ? "" : "s"}`
+            : "No verified workouts yet",
+      };
+    });
+
+    const goalUserIds = new Set(mapped.map((item) => item.userId));
+    const orphanWorkouts = workouts
+      .filter((workout) => !goalUserIds.has(String(workout.userId)))
+      .map((workout) => {
+        const userId = String(workout.userId);
+        const user = usersById.get(userId);
+
+        return {
+          id: `goal_${userId}`,
+          userId,
+          title: `${String(workout.goalType ?? workout.title ?? "Training goal")} plan`,
+          goalType: String(workout.goalType ?? "Custom Mission"),
+          targetDate: String(workout.targetDate ?? ""),
+          phoneNumber: String(user?.phoneNumber ?? workout.phoneNumber ?? ""),
+          googleCalendarEmail: String(user?.googleCalendarEmail ?? workout.googleCalendarEmail ?? ""),
+          createdAt: workout.updatedAt?.toISOString?.() ?? new Date().toISOString(),
+          status:
+            workout.todayTask?.status === "done"
+              ? "Completed"
+              : workout.todayTask?.status === "missed"
+                ? "Adjustment Needed"
+                : "Active",
+          nextMission: String(workout.todayTask?.title ?? workout.nextMission ?? "Workout to be scheduled"),
+          summary: String(workout.summary ?? `${user?.name ?? "Trainee"} is progressing through the demo workout flow.`),
+          baseline: String(workout.baseline ?? ""),
+          weeklyAvailability: String(workout.weeklyAvailability ?? ""),
+          wakeWindow: String(workout.wakeWindow ?? ""),
+          injuryLimit: String(workout.injuryLimit ?? ""),
+          trigger: String(workout.trigger ?? ""),
+          escalationTolerance: String(workout.escalationTolerance ?? "Measured"),
+          channels: Array.isArray(workout.channels) ? workout.channels : [],
+          adherenceSummary: "Demo workout state",
+        };
+      });
+
+    const plans = [...mapped, ...orphanWorkouts].sort((left, right) =>
+      String(right.createdAt).localeCompare(String(left.createdAt))
+    );
+
+    return res.json({ ok: true, plans });
+  } catch (error) {
+    return sendError(res, 500, "DB_ERROR", "Failed to load plan library", String(error));
+  }
+});
+
 app.get("/api/dashboard", async (req, res) => {
   try {
     const userId = String(req.query.userId ?? "").trim();

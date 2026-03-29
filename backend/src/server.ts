@@ -25,6 +25,12 @@ type GarminActivityInput = {
   steps?: number;
   calories?: number;
 };
+type VoiceSessionStatus = "active" | "ended";
+type VoiceTurn = {
+  role: "user" | "coach" | "system";
+  text: string;
+  at: string;
+};
 type ErrorCode =
   | "RATE_LIMITED"
   | "VALIDATION_ERROR"
@@ -230,6 +236,24 @@ function demoRecoveryAction() {
     title: "20-min punishment run + commitment to tomorrow",
     description: "Complete this today to clear debt and reset momentum."
   };
+}
+
+async function resolveVoiceSessionUserId(inputUserId?: string) {
+  if (inputUserId && ObjectId.isValid(inputUserId)) {
+    return new ObjectId(inputUserId);
+  }
+
+  const db = await withMongoRetry(async () => getDb());
+  const demoUser = await withMongoRetry(async () => db.collection("users").findOne({ email: "demo@painexe.local" }));
+  if (!demoUser?._id) {
+    return null;
+  }
+
+  return demoUser._id as ObjectId;
+}
+
+function buildCoachGreeting(args: { name: string; stage: EscalationStage; debtCount: number; todayTaskTitle: string }) {
+  return `This is coach mode. ${args.name}, stage ${args.stage}, debt ${args.debtCount}. Today's assignment is ${args.todayTaskTitle}. Speak your update now.`;
 }
 
 async function maybeOpenAIReply(userMessage: string, context: { stage: EscalationStage; debtCount: number }) {
@@ -1127,6 +1151,215 @@ app.post("/api/voice/preview", rateLimit(20, 60_000), async (req, res) => {
   } catch (error) {
     const code = String(error).toLowerCase().includes("elevenlabs") ? "VOICE_UNAVAILABLE" : "INTERNAL_ERROR";
     return sendError(res, 500, code, "Failed to generate voice preview", String(error));
+  }
+});
+
+app.post("/api/voice/session/start", rateLimit(15, 60_000), async (req, res) => {
+  try {
+    const { userId, includeGreetingAudio = true } = req.body as {
+      userId?: string;
+      includeGreetingAudio?: boolean;
+    };
+
+    const oid = await resolveVoiceSessionUserId(userId);
+    if (!oid) {
+      return sendError(res, 404, "NOT_FOUND", "No valid user found for voice session start");
+    }
+
+    const db = await withMongoRetry(async () => getDb());
+    const [user, plan, escalation] = await withMongoRetry(async () =>
+      Promise.all([
+        db.collection("users").findOne({ _id: oid }),
+        db.collection("plans").findOne({ userId: oid }),
+        db.collection("escalations").findOne({ userId: oid })
+      ])
+    );
+
+    if (!user || !plan || !escalation) {
+      return sendError(res, 404, "NOT_FOUND", "Voice session context not found");
+    }
+
+    const stage = boundedStage(Number(escalation.stage ?? 1));
+    const debtCount = Number(plan.debtCount ?? 0);
+    const greetingText = buildCoachGreeting({
+      name: String(user.name ?? "athlete"),
+      stage,
+      debtCount,
+      todayTaskTitle: String(plan.todayTask?.title ?? "today's workout")
+    });
+
+    const startedAt = new Date();
+    const turns: VoiceTurn[] = [{ role: "system", text: "Voice session started", at: startedAt.toISOString() }];
+    const insert = await db.collection("voice_sessions").insertOne({
+      userId: oid,
+      status: "active" as VoiceSessionStatus,
+      stageAtStart: stage,
+      debtAtStart: debtCount,
+      todayTaskTitle: String(plan.todayTask?.title ?? ""),
+      turns,
+      startedAt,
+      endedAt: null,
+      updatedAt: startedAt
+    });
+
+    let greetingAudioBase64: string | null = null;
+    if (includeGreetingAudio) {
+      try {
+        greetingAudioBase64 = await generateVoiceBase64(greetingText);
+      } catch {
+        greetingAudioBase64 = null;
+      }
+    }
+
+    await db.collection("voice_sessions").updateOne(
+      { _id: insert.insertedId },
+      {
+        $push: {
+          turns: {
+            role: "coach",
+            text: greetingText,
+            at: nowIso()
+          }
+        },
+        $set: { updatedAt: new Date() }
+      } as any
+    );
+
+    return res.json({
+      ok: true,
+      sessionId: insert.insertedId.toString(),
+      userId: oid.toString(),
+      stage,
+      debtCount,
+      greeting: {
+        text: greetingText,
+        voice: greetingAudioBase64 ? { mimeType: "audio/mpeg", audioBase64: greetingAudioBase64 } : null
+      }
+    });
+  } catch (error) {
+    return sendError(res, 500, "DB_ERROR", "Failed to start voice session", String(error));
+  }
+});
+
+app.post("/api/voice/session/:sessionId/turn", rateLimit(30, 60_000), async (req, res) => {
+  try {
+    const sessionId = String(req.params.sessionId ?? "").trim();
+    const { userText, includeVoice = true } = req.body as {
+      userText?: string;
+      includeVoice?: boolean;
+    };
+    const trimmed = String(userText ?? "").trim();
+
+    if (!ObjectId.isValid(sessionId)) {
+      return sendError(res, 400, "VALIDATION_ERROR", "Valid sessionId is required");
+    }
+    if (!trimmed) {
+      return sendError(res, 400, "VALIDATION_ERROR", "userText is required");
+    }
+    if (trimmed.length > MAX_CHAT_MESSAGE_LENGTH) {
+      return sendError(res, 400, "VALIDATION_ERROR", `userText must be <= ${MAX_CHAT_MESSAGE_LENGTH} characters`);
+    }
+
+    const db = await withMongoRetry(async () => getDb());
+    const sid = new ObjectId(sessionId);
+    const session = await withMongoRetry(async () => db.collection("voice_sessions").findOne({ _id: sid }));
+    if (!session) {
+      return sendError(res, 404, "NOT_FOUND", "Voice session not found");
+    }
+    if (session.status !== "active") {
+      return sendError(res, 400, "VALIDATION_ERROR", "Voice session is not active");
+    }
+
+    const coachReply = await maybeOpenAIReply(trimmed, {
+      stage: boundedStage(Number(session.stageAtStart ?? 1)),
+      debtCount: Number(session.debtAtStart ?? 0)
+    });
+
+    await db.collection("voice_sessions").updateOne(
+      { _id: sid },
+      {
+        $push: {
+          turns: {
+            $each: [
+              { role: "user", text: trimmed, at: nowIso() },
+              { role: "coach", text: coachReply, at: nowIso() }
+            ]
+          }
+        },
+        $set: { updatedAt: new Date() }
+      } as any
+    );
+
+    if (!includeVoice) {
+      return res.json({ ok: true, coachReply, voice: null });
+    }
+
+    try {
+      const audioBase64 = await generateVoiceBase64(coachReply);
+      return res.json({ ok: true, coachReply, voice: { mimeType: "audio/mpeg", audioBase64 } });
+    } catch (error) {
+      return res.json({
+        ok: true,
+        coachReply,
+        voice: null,
+        voiceError: {
+          code: "VOICE_UNAVAILABLE",
+          error: "Failed to generate voice for this turn",
+          detail: String(error)
+        }
+      });
+    }
+  } catch (error) {
+    return sendError(res, 500, "DB_ERROR", "Failed to process voice session turn", String(error));
+  }
+});
+
+app.post("/api/voice/session/:sessionId/end", async (req, res) => {
+  try {
+    const sessionId = String(req.params.sessionId ?? "").trim();
+    const { reason } = req.body as { reason?: string };
+    if (!ObjectId.isValid(sessionId)) {
+      return sendError(res, 400, "VALIDATION_ERROR", "Valid sessionId is required");
+    }
+
+    const sid = new ObjectId(sessionId);
+    const db = await withMongoRetry(async () => getDb());
+    const endedAt = new Date();
+
+    const result = await db.collection("voice_sessions").findOneAndUpdate(
+      { _id: sid, status: "active" },
+      {
+        $set: {
+          status: "ended" as VoiceSessionStatus,
+          endedAt,
+          endReason: String(reason ?? "manual_end"),
+          updatedAt: endedAt
+        },
+        $push: {
+          turns: {
+            role: "system",
+            text: `Voice session ended (${String(reason ?? "manual_end")})`,
+            at: endedAt.toISOString()
+          }
+        }
+      } as any,
+      { returnDocument: "after" }
+    );
+
+    if (!result) {
+      return sendError(res, 404, "NOT_FOUND", "Active voice session not found");
+    }
+
+    const turnCount = Array.isArray(result.turns) ? result.turns.length : 0;
+    return res.json({
+      ok: true,
+      sessionId,
+      status: "ended",
+      turnCount,
+      endedAt: endedAt.toISOString()
+    });
+  } catch (error) {
+    return sendError(res, 500, "DB_ERROR", "Failed to end voice session", String(error));
   }
 });
 

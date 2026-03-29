@@ -125,6 +125,56 @@ Response:
 { "mimeType": "audio/mpeg", "audioBase64": "<base64>" }
 ```
 
+## POST /api/voice/session/start
+Request:
+```json
+{ "userId": "<optional-id>", "includeGreetingAudio": true }
+```
+Response:
+```json
+{
+  "ok": true,
+  "sessionId": "<id>",
+  "userId": "<id>",
+  "stage": 2,
+  "debtCount": 1,
+  "greeting": {
+    "text": "This is coach mode...",
+    "voice": { "mimeType": "audio/mpeg", "audioBase64": "<base64>" }
+  }
+}
+```
+
+## POST /api/voice/session/:sessionId/turn
+Request:
+```json
+{ "userText": "I skipped today", "includeVoice": true }
+```
+Response:
+```json
+{
+  "ok": true,
+  "coachReply": "...",
+  "voice": { "mimeType": "audio/mpeg", "audioBase64": "<base64>" }
+}
+```
+
+## POST /api/voice/session/:sessionId/end
+Request:
+```json
+{ "reason": "user_hangup" }
+```
+Response:
+```json
+{
+  "ok": true,
+  "sessionId": "<id>",
+  "status": "ended",
+  "turnCount": 6,
+  "endedAt": "2026-03-29T00:00:00.000Z"
+}
+```
+
 ## POST /api/integrations/garmin/sync
 Request:
 ```json

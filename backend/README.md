@@ -10,6 +10,9 @@ Standalone API service for hackathon demo flow.
 - `POST /api/checkin`
 - `POST /api/recovery`
 - `POST /api/voice/preview`
+- `POST /api/voice/session/start`
+- `POST /api/voice/session/:sessionId/turn`
+- `POST /api/voice/session/:sessionId/end`
 - `GET /api/demo/state`
 - `POST /api/demo/reset`
 

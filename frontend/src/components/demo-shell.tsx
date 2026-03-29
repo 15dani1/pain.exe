@@ -99,6 +99,9 @@ export function DemoShell({ page }: DemoShellProps) {
   const [garminDemo, setGarminDemo] = useState<GarminDemoResponse | null>(null);
   const [garminPending, setGarminPending] = useState<string | null>(null);
   const [garminResult, setGarminResult] = useState<GarminSyncResponse | null>(null);
+  const [callOverlayOpen, setCallOverlayOpen] = useState(false);
+  const [callPhase, setCallPhase] = useState<"dialing" | "connected">("dialing");
+  const [callElapsedSeconds, setCallElapsedSeconds] = useState(0);
 
   const selectedPlan = useMemo(() => {
     if (plans.length === 0) {
@@ -174,6 +177,32 @@ export function DemoShell({ page }: DemoShellProps) {
       setCalendarConnected(Boolean(selectedPlan.googleCalendarEmail));
     }
   }, [selectedPlan]);
+
+  useEffect(() => {
+    if (!callOverlayOpen) {
+      setCallPhase("dialing");
+      setCallElapsedSeconds(0);
+      return;
+    }
+
+    const connectTimeout = window.setTimeout(() => {
+      setCallPhase("connected");
+    }, 1800);
+
+    return () => window.clearTimeout(connectTimeout);
+  }, [callOverlayOpen]);
+
+  useEffect(() => {
+    if (!callOverlayOpen || callPhase !== "connected") {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setCallElapsedSeconds((value) => value + 1);
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [callOverlayOpen, callPhase]);
 
   async function bootstrap() {
     setError(null);
@@ -388,6 +417,16 @@ export function DemoShell({ page }: DemoShellProps) {
     }
   }
 
+  function openCallOverlay() {
+    setCallPhase("dialing");
+    setCallElapsedSeconds(0);
+    setCallOverlayOpen(true);
+  }
+
+  function closeCallOverlay() {
+    setCallOverlayOpen(false);
+  }
+
   return (
     <main className="grain relative min-h-screen overflow-hidden">
       <div className="mx-auto flex w-full max-w-7xl flex-col px-4 py-4 sm:px-5 lg:px-6">
@@ -461,6 +500,7 @@ export function DemoShell({ page }: DemoShellProps) {
                 actionPending={actionPending}
                 onDone={submitCheckin}
                 onRecovery={submitRecovery}
+                onCallTrainer={openCallOverlay}
               />
             </div>
 
@@ -493,6 +533,15 @@ export function DemoShell({ page }: DemoShellProps) {
           </section>
         ) : null}
       </div>
+
+      {callOverlayOpen ? (
+        <TrainerCallModal
+          selectedPlan={selectedPlan}
+          phase={callPhase}
+          elapsedSeconds={callElapsedSeconds}
+          onClose={closeCallOverlay}
+        />
+      ) : null}
     </main>
   );
 }
@@ -611,6 +660,7 @@ function TodayMissionPanel({
   actionPending,
   onDone,
   onRecovery,
+  onCallTrainer,
 }: {
   dashboard: DashboardPayload | null;
   selectedPlan: PlanRecord | null;
@@ -619,6 +669,7 @@ function TodayMissionPanel({
   actionPending: string | null;
   onDone: (status: "done" | "missed") => Promise<void>;
   onRecovery: (action: "accept" | "snooze") => Promise<void>;
+  onCallTrainer: () => void;
 }) {
   const taskStatus = dashboard?.todayTask.status ?? "pending";
   const weekStrip = useMemo(
@@ -720,6 +771,13 @@ function TodayMissionPanel({
             >
               {actionPending === "missed" ? "Logging..." : "Mark missed"}
             </button>
+            <button
+              type="button"
+              onClick={onCallTrainer}
+              className="rounded-full border border-black/20 bg-white px-5 py-3 font-medium text-black transition hover:border-black/40 hover:bg-black hover:text-white"
+            >
+              Call trainer
+            </button>
           </div>
         </div>
 
@@ -751,6 +809,67 @@ function TodayMissionPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+function TrainerCallModal({
+  selectedPlan,
+  phase,
+  elapsedSeconds,
+  onClose,
+}: {
+  selectedPlan: PlanRecord | null;
+  phase: "dialing" | "connected";
+  elapsedSeconds: number;
+  onClose: () => void;
+}) {
+  const mm = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
+  const ss = String(elapsedSeconds % 60).padStart(2, "0");
+  const callTime = `${mm}:${ss}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm">
+      <div className="relative w-full max-w-sm rounded-[2.2rem] bg-[#0e1218] p-4 text-white shadow-2xl ring-1 ring-white/10">
+        <div className="mx-auto mb-4 h-1.5 w-20 rounded-full bg-white/20" />
+        <div className="rounded-[1.8rem] border border-white/10 bg-gradient-to-b from-[#121824] to-[#0a0f15] p-6 text-center">
+          <p className="label text-[#8fb2ff]">Trainer line</p>
+          <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">Coach Goggins</h3>
+          <p className="mt-1 text-sm text-white/70">
+            {selectedPlan?.phoneNumber ? `Calling ${selectedPlan.phoneNumber}` : "Live demo call"}
+          </p>
+
+          <div className="mt-6 flex justify-center">
+            <div className="relative flex h-28 w-28 items-center justify-center rounded-full bg-[#1b2333]">
+              <span
+                className={`absolute inset-0 rounded-full ${
+                  phase === "dialing" ? "animate-ping bg-[#4a7aff]/30" : "bg-[#3fbf7f]/20"
+                }`}
+              />
+              <div className="relative h-20 w-20 rounded-full bg-[#2d3f64]" />
+            </div>
+          </div>
+
+          <p className="mt-5 text-sm font-medium tracking-[0.12em] uppercase text-white/70">
+            {phase === "dialing" ? "Dialing..." : `Connected • ${callTime}`}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-white/80">
+            {phase === "dialing"
+              ? "Connecting trainer line and preparing voice stream."
+              : "Two-way trainer conversation is active for demo preview."}
+          </p>
+
+          <div className="mt-7 flex justify-center">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full bg-[#ff5e5e] px-6 py-3 font-semibold text-white transition hover:bg-[#e54f4f]"
+            >
+              End call
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

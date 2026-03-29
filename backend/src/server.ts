@@ -564,6 +564,21 @@ async function ensureElevenLabsConnection(sessionKey: string) {
   return connection;
 }
 
+/**
+ * Removes `[...]` segments whose inner text contains the whole words "fast" or "slow"
+ * (common TTS/stage-direction noise). Other bracketed segments are kept.
+ */
+function filterCoachBracketDirections(text: string): string {
+  const stripped = text.replace(/\[[^\]]*\]/g, (segment) => {
+    const inner = segment.slice(1, -1);
+    if (/\bfast\b/i.test(inner) || /\bslow\b/i.test(inner)) {
+      return "";
+    }
+    return segment;
+  });
+  return stripped.replace(/\s{2,}/g, " ").trim();
+}
+
 async function maybeElevenLabsAgentReply(args: {
   sessionKey: string;
   userMessage: string;
@@ -613,7 +628,7 @@ async function maybeOpenAIReply(
       });
       if (elevenReply) {
         console.log(`[llm] provider=elevenlabs-agent session=${context.sessionKey}`);
-        return elevenReply;
+        return filterCoachBracketDirections(elevenReply);
       }
     } catch (error) {
       console.warn(
@@ -629,7 +644,9 @@ async function maybeOpenAIReply(
     } else {
       console.warn("[llm] provider=fallback-local (no ElevenLabs agent or OpenAI key configured)");
     }
-    return localCoachReply(userMessage, context.stage, context.debtCount);
+    return filterCoachBracketDirections(
+      localCoachReply(userMessage, context.stage, context.debtCount),
+    );
   }
 
   const system = [
@@ -666,11 +683,15 @@ async function maybeOpenAIReply(
 
   if (!response.ok) {
     console.warn(`[llm] provider=openai unavailable; status=${response.status}; falling back local`);
-    return localCoachReply(userMessage, context.stage, context.debtCount);
+    return filterCoachBracketDirections(
+      localCoachReply(userMessage, context.stage, context.debtCount),
+    );
   }
 
   const data = (await response.json()) as { output_text?: string };
-  return data.output_text?.trim() || localCoachReply(userMessage, context.stage, context.debtCount);
+  const reply =
+    data.output_text?.trim() || localCoachReply(userMessage, context.stage, context.debtCount);
+  return filterCoachBracketDirections(reply);
 }
 
 async function maybeOpenAIGarminFeedback(context: {

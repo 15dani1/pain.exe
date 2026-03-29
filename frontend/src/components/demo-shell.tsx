@@ -170,7 +170,6 @@ export function DemoShell({ page }: DemoShellProps) {
   const [callPhase, setCallPhase] = useState<"dialing" | "connected">("dialing");
   const [callElapsedSeconds, setCallElapsedSeconds] = useState(0);
   const [callStartPending, setCallStartPending] = useState(false);
-  const [callSessionNote, setCallSessionNote] = useState<string | null>(null);
   const [callProviderLabel, setCallProviderLabel] = useState<string>("Demo call");
   const [callVoiceSessionId, setCallVoiceSessionId] = useState<string | null>(null);
   const [callConversation, setCallConversation] = useState<CallConversationTurn[]>([]);
@@ -245,7 +244,6 @@ export function DemoShell({ page }: DemoShellProps) {
     if (!callOverlayOpen) {
       setCallPhase("dialing");
       setCallElapsedSeconds(0);
-      setCallSessionNote(null);
       setCallProviderLabel("Demo call");
       setCallConversation([]);
       setCallTurnPending(false);
@@ -404,8 +402,16 @@ export function DemoShell({ page }: DemoShellProps) {
         },
       ]);
 
-      if (data.voiceError?.error) {
-        setCallSessionNote(`Voice degraded: ${data.voiceError.error}`);
+      const voiceErr = data.voiceError?.error;
+      if (voiceErr) {
+        setCallConversation((prev) => [
+          ...prev,
+          {
+            id: `system-voice-${Date.now()}`,
+            role: "system",
+            text: `Voice degraded: ${voiceErr}`,
+          },
+        ]);
       }
       await playReturnedVoice(data.voice);
     } catch (caughtError) {
@@ -622,7 +628,6 @@ export function DemoShell({ page }: DemoShellProps) {
     setCallStartPending(true);
     setCallPhase("dialing");
     setCallElapsedSeconds(0);
-    setCallSessionNote(null);
     setCallProviderLabel("Connecting");
     setCallOverlayOpen(true);
     setCallConversation([
@@ -652,18 +657,9 @@ export function DemoShell({ page }: DemoShellProps) {
       }
 
       if (data.provider === "fallback_in_app") {
-        setCallProviderLabel("In-app fallback");
-        setCallSessionNote(
-          data.note ??
-            "Twilio is not configured yet. Coach fallback message was posted to escalation timeline.",
-        );
+        setCallProviderLabel("Voice session");
       } else {
-        setCallProviderLabel("Twilio outbound");
-        setCallSessionNote(
-          data.callSid
-            ? `Live call requested. SID ${data.callSid}.`
-            : "Live call request submitted.",
-        );
+        setCallProviderLabel("Live call");
       }
 
       await startVoiceSessionForCall(activeUserId);
@@ -671,7 +667,6 @@ export function DemoShell({ page }: DemoShellProps) {
       setError(null);
     } catch (caughtError) {
       setCallProviderLabel("Demo fallback");
-      setCallSessionNote("Unable to start provider call. Keeping demo overlay active.");
       setError(String(caughtError));
     } finally {
       setCallStartPending(false);
@@ -789,7 +784,6 @@ export function DemoShell({ page }: DemoShellProps) {
           phase={callPhase}
           elapsedSeconds={callElapsedSeconds}
           providerLabel={callProviderLabel}
-          sessionNote={callSessionNote}
           pending={callStartPending}
           transcript={callConversation}
           coachSpeaking={callCoachSpeaking}
@@ -1129,7 +1123,6 @@ function TrainerCallModal({
   phase,
   elapsedSeconds,
   providerLabel,
-  sessionNote,
   pending,
   transcript,
   coachSpeaking,
@@ -1142,7 +1135,6 @@ function TrainerCallModal({
   phase: "dialing" | "connected";
   elapsedSeconds: number;
   providerLabel: string;
-  sessionNote: string | null;
   pending: boolean;
   transcript: CallConversationTurn[];
   coachSpeaking: boolean;
@@ -1356,13 +1348,8 @@ function TrainerCallModal({
               <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
                 {statusLine}
               </p>
-              {sessionNote ? (
-                <p className="mt-3 rounded-xl border border-[color:var(--line)] bg-[rgba(255,255,255,0.55)] px-3 py-2 text-xs leading-5 text-[color:var(--muted)]">
-                  {sessionNote}
-                </p>
-              ) : null}
 
-              <div className="mt-4 flex justify-center md:justify-start">
+              <div className="mt-4 flex justify-center">
                 <button
                   type="button"
                   onClick={onClose}
@@ -1411,7 +1398,7 @@ function TrainerCallModal({
                 <p className="text-xs leading-5 text-[color:var(--muted)]">
                   Mic-only mode. Start speaking when you want the floor, then tap again to send. If the coach is still talking, your tap will interrupt playback first.
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
                   <button
                     type="button"
                     onClick={handleMicCapture}

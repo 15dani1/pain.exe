@@ -108,6 +108,47 @@ type CallConversationTurn = {
   role: "coach" | "user" | "system";
   text: string;
 };
+
+type VoicePlayback = {
+  mimeType: string;
+  audioBase64: string;
+};
+
+type SpeechRecognitionAlternativeLike = {
+  transcript?: string;
+};
+
+type SpeechRecognitionResultLike = {
+  0?: SpeechRecognitionAlternativeLike;
+};
+
+type SpeechRecognitionEventLike = {
+  results?: ArrayLike<SpeechRecognitionResultLike>;
+};
+
+type SpeechRecognitionErrorEventLike = {
+  error?: string;
+};
+
+type BrowserSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  onend: (() => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  start: () => void;
+  stop?: () => void;
+};
+
+type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
+type BrowserSpeechWindow = Window &
+  typeof globalThis & {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  };
 type DemoShellProps = {
   page: PageKind;
 };
@@ -132,6 +173,7 @@ export function DemoShell({ page }: DemoShellProps) {
   const [callVoiceSessionId, setCallVoiceSessionId] = useState<string | null>(null);
   const [callConversation, setCallConversation] = useState<CallConversationTurn[]>([]);
   const [callTurnPending, setCallTurnPending] = useState(false);
+  const [callCoachSpeaking, setCallCoachSpeaking] = useState(false);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const selectedPlan = useMemo(() => {
@@ -205,6 +247,7 @@ export function DemoShell({ page }: DemoShellProps) {
       setCallProviderLabel("Demo call");
       setCallConversation([]);
       setCallTurnPending(false);
+      setCallCoachSpeaking(false);
       return;
     }
 
@@ -227,8 +270,22 @@ export function DemoShell({ page }: DemoShellProps) {
     return () => window.clearInterval(interval);
   }, [callOverlayOpen, callPhase]);
 
-  async function playReturnedVoice(voice: { mimeType: string; audioBase64: string } | null) {
+  function stopCoachAudioPlayback() {
+    const player = audioPlayerRef.current;
+    if (!player) {
+      return;
+    }
+
+    player.pause();
+    player.currentTime = 0;
+    player.onended = null;
+    player.onerror = null;
+    setCallCoachSpeaking(false);
+  }
+
+  async function playReturnedVoice(voice: VoicePlayback | null) {
     if (!voice?.audioBase64) {
+      setCallCoachSpeaking(false);
       return;
     }
 
@@ -238,10 +295,19 @@ export function DemoShell({ page }: DemoShellProps) {
         audioPlayerRef.current = new Audio();
       }
       const player = audioPlayerRef.current;
+      stopCoachAudioPlayback();
       player.src = src;
       player.currentTime = 0;
+      player.onended = () => {
+        setCallCoachSpeaking(false);
+      };
+      player.onerror = () => {
+        setCallCoachSpeaking(false);
+      };
+      setCallCoachSpeaking(true);
       await player.play();
     } catch {
+      setCallCoachSpeaking(false);
       // Browser autoplay can fail if no recent user gesture; transcript still updates.
     }
   }
@@ -280,6 +346,7 @@ export function DemoShell({ page }: DemoShellProps) {
       return;
     }
 
+    stopCoachAudioPlayback();
     setCallTurnPending(true);
     setCallConversation((prev) => [
       ...prev,
@@ -590,6 +657,7 @@ export function DemoShell({ page }: DemoShellProps) {
   }
 
   function closeCallOverlay() {
+    stopCoachAudioPlayback();
     void endVoiceSession("user_hangup");
     setCallOverlayOpen(false);
   }
@@ -702,8 +770,10 @@ export function DemoShell({ page }: DemoShellProps) {
           sessionNote={callSessionNote}
           pending={callStartPending}
           transcript={callConversation}
+          coachSpeaking={callCoachSpeaking}
           turnPending={callTurnPending}
           onSendTurn={submitCallTurn}
+          onInterruptCoach={stopCoachAudioPlayback}
           onClose={closeCallOverlay}
         />
       ) : null}
@@ -724,26 +794,14 @@ function PlansListPanel({
   actionPending: string | null;
   onSelectPlan: (plan: PlanRecord) => Promise<void>;
 }) {
-  const [listPage, setListPage] = useState(0);
+  const [manualPage, setManualPage] = useState<number | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(plans.length / PLANS_PAGE_SIZE));
-
-  useEffect(() => {
-    setListPage((page) => Math.min(page, totalPages - 1));
-  }, [totalPages, plans.length]);
-
-  useEffect(() => {
-    if (!selectedPlanId || plans.length === 0) {
-      return;
-    }
-
-    const index = plans.findIndex((plan) => plan.id === selectedPlanId);
-
-    if (index >= 0) {
-      setListPage(Math.floor(index / PLANS_PAGE_SIZE));
-    }
-  }, [selectedPlanId, plans]);
-
+  const selectedIndex = selectedPlanId
+    ? plans.findIndex((plan) => plan.id === selectedPlanId)
+    : -1;
+  const selectedPage = selectedIndex >= 0 ? Math.floor(selectedIndex / PLANS_PAGE_SIZE) : 0;
+  const listPage = Math.min(manualPage ?? selectedPage, totalPages - 1);
   const pageOffset = listPage * PLANS_PAGE_SIZE;
   const pagePlans = plans.slice(pageOffset, pageOffset + PLANS_PAGE_SIZE);
   const rangeLabel =
@@ -770,7 +828,10 @@ function PlansListPanel({
           <button
             key={plan.id}
             type="button"
-            onClick={() => void onSelectPlan(plan)}
+            onClick={() => {
+              setManualPage(null);
+              void onSelectPlan(plan);
+            }}
             className={`rounded-[1.25rem] border p-3 text-left transition ${
               selectedPlanId === plan.id
                 ? "border-black bg-black text-white"
@@ -811,7 +872,7 @@ function PlansListPanel({
             <button
               type="button"
               disabled={listPage <= 0}
-              onClick={() => setListPage((p) => Math.max(0, p - 1))}
+              onClick={() => setManualPage(Math.max(0, listPage - 1))}
               className="rounded-full border border-[color:var(--line)] bg-white/80 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
             >
               Previous
@@ -822,7 +883,7 @@ function PlansListPanel({
             <button
               type="button"
               disabled={listPage >= totalPages - 1}
-              onClick={() => setListPage((p) => Math.min(totalPages - 1, p + 1))}
+              onClick={() => setManualPage(Math.min(totalPages - 1, listPage + 1))}
               className="rounded-full border border-[color:var(--line)] bg-white/80 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
             >
               Next
@@ -939,14 +1000,17 @@ function TodayMissionPanel({
               <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--muted)]">
                 {day.weekday}
               </span>
+              <span className="text-[10px] leading-none text-[color:var(--muted)]">
+                {day.dateLabel}
+              </span>
               <span
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[color:var(--line)] text-base leading-none"
                 aria-label={
                   day.marker === "done"
-                    ? `${day.weekday}: completed`
+                    ? `${day.weekday} ${day.dateLabel}: completed`
                     : day.marker === "missed"
-                      ? `${day.weekday}: missed`
-                      : `${day.weekday}: no result yet`
+                      ? `${day.weekday} ${day.dateLabel}: missed`
+                      : `${day.weekday} ${day.dateLabel}: no result yet`
                 }
               >
                 {day.marker === "done" ? (
@@ -1046,8 +1110,10 @@ function TrainerCallModal({
   sessionNote,
   pending,
   transcript,
+  coachSpeaking,
   turnPending,
   onSendTurn,
+  onInterruptCoach,
   onClose,
 }: {
   selectedPlan: PlanRecord | null;
@@ -1057,61 +1123,119 @@ function TrainerCallModal({
   sessionNote: string | null;
   pending: boolean;
   transcript: CallConversationTurn[];
+  coachSpeaking: boolean;
   turnPending: boolean;
   onSendTurn: (text: string) => Promise<void>;
+  onInterruptCoach: () => void;
   onClose: () => void;
 }) {
   const mm = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
   const ss = String(elapsedSeconds % 60).padStart(2, "0");
   const callTime = `${mm}:${ss}`;
   const [recognizing, setRecognizing] = useState(false);
+  const [draftTranscript, setDraftTranscript] = useState("");
   const [micError, setMicError] = useState<string | null>(null);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const shouldSendOnEndRef = useRef(false);
+  const transcriptDraftRef = useRef("");
+  const speechWindow =
+    typeof window === "undefined" ? null : (window as BrowserSpeechWindow);
 
   const micSupported =
-    typeof window !== "undefined" &&
-    Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+    Boolean(speechWindow?.SpeechRecognition || speechWindow?.webkitSpeechRecognition);
+
+  function finishMicCapture(options?: { cancel?: boolean }) {
+    const recognition = recognitionRef.current;
+    if (!recognition) {
+      return;
+    }
+
+    shouldSendOnEndRef.current = !options?.cancel;
+    try {
+      recognition.stop?.();
+    } catch {
+      setRecognizing(false);
+    }
+  }
 
   function handleMicCapture() {
     setMicError(null);
     const SpeechRecognitionCtor =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      speechWindow?.SpeechRecognition || speechWindow?.webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) {
       setMicError("Mic dictation is not supported in this browser (Chrome recommended).");
       return;
     }
 
     try {
+      if (recognizing) {
+        finishMicCapture();
+        return;
+      }
+
+      if (coachSpeaking) {
+        onInterruptCoach();
+      }
       if (recognitionRef.current) {
-        recognitionRef.current.stop?.();
+        finishMicCapture({ cancel: true });
       }
       const recognition = new SpeechRecognitionCtor();
       recognitionRef.current = recognition;
       recognition.lang = "en-US";
-      recognition.interimResults = false;
+      recognition.continuous = true;
+      recognition.interimResults = true;
       recognition.maxAlternatives = 1;
+      shouldSendOnEndRef.current = true;
+      transcriptDraftRef.current = "";
+      setDraftTranscript("");
       setRecognizing(true);
 
-      recognition.onresult = (event: any) => {
-        const transcriptText = String(event?.results?.[0]?.[0]?.transcript ?? "").trim();
-        if (transcriptText) {
-          void onSendTurn(transcriptText);
-        } else {
-          setMicError("No speech was detected. Try again and speak clearly.");
+      recognition.onresult = (event: SpeechRecognitionEventLike) => {
+        let nextDraft = "";
+        const results = event?.results;
+        if (!results) {
+          return;
         }
+
+        for (let index = 0; index < results.length; index += 1) {
+          nextDraft += `${String(results[index]?.[0]?.transcript ?? "")} `;
+        }
+
+        const cleaned = nextDraft.trim();
+        transcriptDraftRef.current = cleaned;
+        setDraftTranscript(cleaned);
       };
-      recognition.onerror = (event: any) => {
+      recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
         const code = String(event?.error ?? "unknown");
+        shouldSendOnEndRef.current = false;
         if (code === "not-allowed") {
           setMicError("Microphone permission was denied. Allow mic access in browser settings.");
         } else if (code === "no-speech") {
           setMicError("No speech detected. Try again and speak closer to the mic.");
+        } else if (code === "aborted") {
+          setMicError(null);
         } else {
           setMicError("Mic capture failed. Try again or type your message.");
         }
       };
       recognition.onend = () => {
+        const transcriptText = transcriptDraftRef.current.trim();
+        const shouldSend = shouldSendOnEndRef.current;
         setRecognizing(false);
+        recognitionRef.current = null;
+        shouldSendOnEndRef.current = false;
+        transcriptDraftRef.current = "";
+        setDraftTranscript("");
+
+        if (!shouldSend) {
+          return;
+        }
+
+        if (transcriptText) {
+          void onSendTurn(transcriptText);
+        } else {
+          setMicError("No speech was detected. Try again and speak clearly.");
+        }
       };
       recognition.start();
     } catch {
@@ -1123,6 +1247,7 @@ function TrainerCallModal({
   useEffect(() => {
     return () => {
       try {
+        shouldSendOnEndRef.current = false;
         recognitionRef.current?.stop?.();
       } catch {
         // ignore
@@ -1131,110 +1256,154 @@ function TrainerCallModal({
     };
   }, []);
 
+  const statusLine =
+    phase === "dialing"
+      ? "Connecting trainer line and preparing voice stream."
+      : turnPending
+        ? "Coach is thinking through your update."
+        : recognizing
+          ? "Listening now. Tap again when you want to send your turn."
+          : coachSpeaking
+            ? "Coach is talking. You can interrupt if you want to jump in."
+            : "Your turn. Start speaking when you're ready.";
+
+  const micButtonLabel = !micSupported
+    ? "Mic unavailable"
+    : turnPending || pending
+      ? "Sending..."
+      : recognizing
+        ? "Stop and send"
+        : coachSpeaking
+          ? "Interrupt"
+          : "Start speaking";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm">
-      <div className="relative w-full max-w-sm rounded-[2.2rem] bg-[#0e1218] p-4 text-white shadow-2xl ring-1 ring-white/10">
-        <div className="mx-auto mb-4 h-1.5 w-20 rounded-full bg-white/20" />
-        <div className="rounded-[1.8rem] border border-white/10 bg-gradient-to-b from-[#121824] to-[#0a0f15] p-6 text-center">
-          <p className="label text-[#8fb2ff]">{providerLabel}</p>
-          <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">Coach Goggins</h3>
-          <p className="mt-1 text-sm text-white/70">
-            {selectedPlan?.phoneNumber ? `Calling ${selectedPlan.phoneNumber}` : "Live demo call"}
-          </p>
-
-          <div className="mt-6 flex justify-center">
-            <div className="relative flex h-28 w-28 items-center justify-center rounded-full bg-[#1b2333]">
-              <span
-                className={`absolute inset-0 rounded-full ${
-                  phase === "dialing" ? "animate-ping bg-[#4a7aff]/30" : "bg-[#3fbf7f]/20"
-                }`}
-              />
-              <div className="relative h-20 w-20 rounded-full bg-[#2d3f64]" />
-            </div>
-          </div>
-
-          <p className="mt-5 text-sm font-medium tracking-[0.12em] uppercase text-white/70">
-            {phase === "dialing" ? "Dialing..." : `Connected • ${callTime}`}
-          </p>
-          <p className="mt-2 text-sm leading-6 text-white/80">
-            {phase === "dialing"
-              ? "Connecting trainer line and preparing voice stream."
-              : "Two-way trainer conversation is active for demo preview."}
-          </p>
-          {sessionNote ? (
-            <p className="mt-3 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs leading-5 text-white/80">
-              {sessionNote}
-            </p>
-          ) : null}
-
-          <div className="mt-4 rounded-[1.2rem] border border-white/12 bg-black/20 p-3 text-left">
-            <p className="label text-white/60">Conversation</p>
-            <div className="mt-2 max-h-36 space-y-2 overflow-y-auto pr-1">
-              {transcript.length === 0 ? (
-                <p className="text-xs text-white/60">
-                  Waiting for coach greeting...
-                </p>
-              ) : (
-                transcript.map((turn) => (
-                  <div
-                    key={turn.id}
-                    className={`rounded-lg px-2.5 py-2 text-xs leading-5 ${
-                      turn.role === "coach"
-                        ? "bg-[#20314f] text-[#e7f0ff]"
-                        : turn.role === "user"
-                          ? "bg-[#2c3320] text-[#f2f7dd]"
-                          : "bg-white/10 text-white/70"
-                    }`}
-                  >
-                    <span className="mr-1 font-semibold uppercase tracking-[0.08em]">
-                      {turn.role}
-                    </span>
-                    {turn.text}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="mt-3 rounded-[1.2rem] border border-white/12 bg-black/15 p-3">
-            <p className="text-xs leading-5 text-white/70">
-              Mic-only mode enabled. Tap the button, speak your update, and the turn will send automatically.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleMicCapture}
-                disabled={recognizing || turnPending || pending}
-                className="rounded-full bg-[#5f8fff] px-4 py-2 text-xs font-semibold text-white disabled:opacity-40"
-              >
-                {!micSupported
-                  ? "Mic unavailable"
-                  : recognizing
-                    ? "Listening..."
-                    : turnPending
-                      ? "Sending..."
-                      : "Tap to talk"}
-              </button>
-            </div>
-            {!micSupported ? (
-              <p className="mt-2 text-[11px] text-white/60">
-                Mic dictation requires Web Speech API support (Chrome recommended).
+      <div className="panel relative w-full max-w-2xl rounded-[2rem] p-3 text-[color:var(--foreground)]">
+        <div className="mx-auto mb-3 h-1.5 w-20 rounded-full bg-black/10" />
+        <div className="rounded-[1.7rem] border border-[color:var(--line)] bg-[linear-gradient(180deg,rgba(255,249,236,0.96),rgba(239,226,207,0.9))] p-4 sm:p-5">
+          <div className="grid gap-4 md:grid-cols-[0.82fr_1.18fr] md:items-start">
+            <div className="rounded-[1.4rem] border border-[color:var(--line)] bg-[rgba(255,255,255,0.45)] p-4 text-center">
+              <p className="label text-[color:var(--signal)]">{providerLabel}</p>
+              <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">Coach Goggins</h3>
+              <p className="mt-1 text-sm text-[color:var(--muted)]">
+                {selectedPlan?.phoneNumber ? `Calling ${selectedPlan.phoneNumber}` : "Live demo call"}
               </p>
-            ) : null}
-            {micError ? (
-              <p className="mt-2 text-[11px] text-[#ffb7b7]">{micError}</p>
-            ) : null}
-          </div>
 
-          <div className="mt-7 flex justify-center">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={pending}
-              className="rounded-full bg-[#ff5e5e] px-6 py-3 font-semibold text-white transition hover:bg-[#e54f4f]"
-            >
-              End call
-            </button>
+              <div className="mt-5 flex justify-center">
+                <div className="relative flex h-22 w-22 items-center justify-center rounded-full bg-[rgba(255,107,53,0.12)] sm:h-24 sm:w-24">
+                  <span
+                    className={`absolute inset-0 rounded-full ${
+                      phase === "dialing"
+                        ? "animate-ping bg-[rgba(255,107,53,0.2)]"
+                        : "bg-[rgba(24,121,78,0.14)]"
+                    }`}
+                  />
+                  <div className="relative h-14 w-14 rounded-full bg-[color:var(--foreground)] sm:h-16 sm:w-16" />
+                </div>
+              </div>
+
+              <p className="mt-4 text-sm font-medium uppercase tracking-[0.12em] text-[color:var(--muted)]">
+                {phase === "dialing" ? "Dialing..." : `Connected • ${callTime}`}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                {statusLine}
+              </p>
+              {sessionNote ? (
+                <p className="mt-3 rounded-xl border border-[color:var(--line)] bg-[rgba(255,255,255,0.55)] px-3 py-2 text-xs leading-5 text-[color:var(--muted)]">
+                  {sessionNote}
+                </p>
+              ) : null}
+
+              <div className="mt-4 flex justify-center md:justify-start">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={pending}
+                  className="rounded-full bg-[color:var(--foreground)] px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+                >
+                  End call
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="rounded-[1.2rem] border border-[color:var(--line)] bg-[rgba(255,255,255,0.52)] p-3 text-left">
+                <p className="label text-[color:var(--muted)]">Conversation</p>
+                <div className="mt-2 max-h-44 space-y-2 overflow-y-auto pr-1">
+                  {transcript.length === 0 ? (
+                    <p className="text-xs text-[color:var(--muted)]">
+                      Waiting for coach greeting...
+                    </p>
+                  ) : (
+                    transcript.map((turn) => (
+                      <div
+                        key={turn.id}
+                        className={`rounded-lg px-2.5 py-2 text-xs leading-5 ${
+                          turn.role === "coach"
+                            ? "bg-[rgba(255,107,53,0.12)] text-[color:var(--foreground)]"
+                            : turn.role === "user"
+                              ? "bg-[rgba(22,18,15,0.08)] text-[color:var(--foreground)]"
+                              : "bg-[rgba(22,18,15,0.05)] text-[color:var(--muted)]"
+                        }`}
+                      >
+                        <span className="mr-1 font-semibold uppercase tracking-[0.08em]">
+                          {turn.role}
+                        </span>
+                        {turn.text}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[1.2rem] border border-[color:var(--line)] bg-[rgba(255,255,255,0.45)] p-3">
+                <p className="text-xs leading-5 text-[color:var(--muted)]">
+                  Mic-only mode. Start speaking when you want the floor, then tap again to send. If the coach is still talking, your tap will interrupt playback first.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleMicCapture}
+                    disabled={turnPending || pending}
+                    className="rounded-full bg-[color:var(--signal)] px-4 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                  >
+                    {micButtonLabel}
+                  </button>
+                  {recognizing ? (
+                    <button
+                      type="button"
+                      onClick={() => finishMicCapture({ cancel: true })}
+                      className="rounded-full border border-[color:var(--line-strong)] bg-white/65 px-4 py-2 text-xs font-semibold text-[color:var(--foreground)]"
+                    >
+                      Cancel
+                    </button>
+                  ) : null}
+                  {coachSpeaking && !recognizing && !turnPending ? (
+                    <button
+                      type="button"
+                      onClick={onInterruptCoach}
+                      className="rounded-full border border-[color:var(--line-strong)] bg-white/65 px-4 py-2 text-xs font-semibold text-[color:var(--foreground)]"
+                    >
+                      Stop voice
+                    </button>
+                  ) : null}
+                </div>
+                {draftTranscript ? (
+                  <p className="mt-2 rounded-lg bg-[rgba(22,18,15,0.05)] px-3 py-2 text-[11px] leading-5 text-[color:var(--muted)]">
+                    {draftTranscript}
+                  </p>
+                ) : null}
+                {!micSupported ? (
+                  <p className="mt-2 text-[11px] text-[color:var(--muted)]">
+                    Mic dictation requires Web Speech API support (Chrome recommended).
+                  </p>
+                ) : null}
+                {micError ? (
+                  <p className="mt-2 text-[11px] text-[color:var(--danger)]">{micError}</p>
+                ) : null}
+              </div>
+            </div>
           </div>
         </div>
       </div>

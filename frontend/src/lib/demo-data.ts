@@ -604,11 +604,15 @@ export type WorkoutDayStripMarker = "done" | "missed" | "empty";
 export type WorkoutDayStripDay = {
   key: string;
   weekday: string;
+  dateLabel: string;
   marker: WorkoutDayStripMarker;
 };
 
-/** Demo outcomes for the three calendar days immediately before today. */
+/** Demo outcomes for the calendar days immediately before today, oldest to newest. */
 const DEMO_WORKOUT_STRIP_PAST: Array<"done" | "missed"> = [
+  "done",
+  "missed",
+  "done",
   "done",
   "missed",
   "done",
@@ -626,10 +630,7 @@ function addLocalDays(d: Date, n: number): Date {
   return x;
 }
 
-/**
- * Seven-day strip centered on today: past days use seeded done/missed, today uses live status
- * (pending → empty), future days stay empty.
- */
+/** Rolling last-seven-days strip: prior days use seeded done/missed, today uses live status. */
 export function getWorkoutWeekStrip(
   nowMs: number,
   todayTaskStatus: "pending" | "done" | "missed" | null,
@@ -637,14 +638,18 @@ export function getWorkoutWeekStrip(
   const today = startOfLocalDay(new Date(nowMs));
   const out: WorkoutDayStripDay[] = [];
 
-  for (let offset = -3; offset <= 3; offset++) {
+  for (let offset = -6; offset <= 0; offset++) {
     const d = addLocalDays(today, offset);
     const weekday = d.toLocaleDateString(undefined, { weekday: "short" });
+    const dateLabel = d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
     let marker: WorkoutDayStripMarker = "empty";
     if (offset < 0) {
-      const seed = DEMO_WORKOUT_STRIP_PAST[offset + 3];
+      const seed = DEMO_WORKOUT_STRIP_PAST[offset + 6];
       marker = seed ?? "empty";
     } else if (offset === 0) {
       if (todayTaskStatus === "done") {
@@ -654,7 +659,7 @@ export function getWorkoutWeekStrip(
       }
     }
 
-    out.push({ key, weekday, marker });
+    out.push({ key, weekday, dateLabel, marker });
   }
 
   return out;

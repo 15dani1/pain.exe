@@ -4,12 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { OnboardingWizard } from "@/components/onboarding-wizard";
+import { WearableInsightsPanel } from "@/components/wearable-insights";
 import {
   createPlanRecord,
   getMonthlyOverview,
   getWeeklyOverview,
   getWorkoutWeekStrip,
-  mapEscalationTimeline,
   type DashboardPayload,
   type DemoApiResponse,
   type IntegrationStatus,
@@ -17,11 +17,6 @@ import {
   type OnboardingResult,
   type PlanRecord,
 } from "@/lib/demo-data";
-import {
-  type GarminDemoResponse,
-  type GarminDemoScenario,
-} from "@/lib/garmin-demo";
-
 const PLAN_STORAGE_KEY = "painexe.created-plans";
 const SELECTED_PLAN_STORAGE_KEY = "painexe.selected-plan-id";
 
@@ -65,22 +60,6 @@ type PlanLibraryResponse = {
   plans: PlanRecord[];
 };
 
-type GarminSyncResponse = {
-  matched: boolean;
-  strikeApplied: boolean;
-  feedback: string;
-  stage: number;
-  debtCount: number;
-  matchedActivity?: {
-    name: string;
-    type: string;
-    durationMinutes: number;
-    distanceKm?: number;
-    averageHeartRate?: number;
-    steps?: number;
-  } | null;
-};
-
 type DemoShellProps = {
   page: PageKind;
 };
@@ -96,9 +75,6 @@ export function DemoShell({ page }: DemoShellProps) {
   const [actionPending, setActionPending] = useState<string | null>(null);
   const [now, setNow] = useState<number | null>(null);
   const [calendarConnected, setCalendarConnected] = useState(false);
-  const [garminDemo, setGarminDemo] = useState<GarminDemoResponse | null>(null);
-  const [garminPending, setGarminPending] = useState<string | null>(null);
-  const [garminResult, setGarminResult] = useState<GarminSyncResponse | null>(null);
   const [callOverlayOpen, setCallOverlayOpen] = useState(false);
   const [callPhase, setCallPhase] = useState<"dialing" | "connected">("dialing");
   const [callElapsedSeconds, setCallElapsedSeconds] = useState(0);
@@ -110,17 +86,6 @@ export function DemoShell({ page }: DemoShellProps) {
 
     return plans.find((plan) => plan.id === selectedPlanId) ?? plans[0] ?? null;
   }, [plans, selectedPlanId]);
-
-  const escalationTimeline = useMemo(
-    () =>
-      dashboard
-        ? mapEscalationTimeline(
-            dashboard.escalation.stage,
-            dashboard.escalationEvents,
-          )
-        : [],
-    [dashboard],
-  );
 
   const countdown = useMemo(() => {
     if (!dashboard || !now) {
@@ -137,7 +102,6 @@ export function DemoShell({ page }: DemoShellProps) {
     return diff >= 0 ? `${value} left` : `${value} overdue`;
   }, [dashboard, now]);
 
-  const garminStatus = dashboard?.integrations?.garmin;
   const weeklyOverview = useMemo(
     () => getWeeklyOverview(selectedPlan?.goalType ?? "Seeded Demo"),
     [selectedPlan],
@@ -208,20 +172,15 @@ export function DemoShell({ page }: DemoShellProps) {
     setError(null);
 
     try {
-      const [demoResponse, garminResponse, plansResponse] = await Promise.all([
+      const [demoResponse, plansResponse] = await Promise.all([
         fetch("/api/demo"),
-        fetch("/api/garmin-demo"),
         fetch("/api/plans"),
       ]);
       const data = (await demoResponse.json()) as DemoApiResponse | ApiError;
-      const garminData = (await garminResponse.json()) as GarminDemoResponse | ApiError;
       const plansData = (await plansResponse.json()) as PlanLibraryResponse | ApiError;
 
       if (!demoResponse.ok || !("ok" in data)) {
         throw new Error(getApiErrorMessage(data, "Failed to load demo state"));
-      }
-      if (!garminResponse.ok || !("provider" in garminData)) {
-        throw new Error(getApiErrorMessage(garminData, "Failed to load Garmin demo data"));
       }
       if (!plansResponse.ok || !("plans" in plansData)) {
         throw new Error(getApiErrorMessage(plansData, "Failed to load plans"));
@@ -250,7 +209,6 @@ export function DemoShell({ page }: DemoShellProps) {
             ?.googleCalendarEmail,
         ),
       );
-      setGarminDemo(garminData);
     } catch (caughtError) {
       setError(String(caughtError));
     }
@@ -304,42 +262,6 @@ export function DemoShell({ page }: DemoShellProps) {
       setError(String(caughtError));
     } finally {
       setActionPending(null);
-    }
-  }
-
-  async function runGarminScenario(scenario: GarminDemoScenario) {
-    if (!activeUserId) {
-      return;
-    }
-
-    setGarminPending(scenario.id);
-    setGarminResult(null);
-
-    try {
-      const response = await fetch("/api/garmin-demo", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: activeUserId,
-          scenarioId: scenario.id,
-        }),
-      });
-
-      const data = (await response.json()) as GarminSyncResponse | ApiError;
-
-      if (!response.ok || !("matched" in data)) {
-        throw new Error(getApiErrorMessage(data, "Failed to run Garmin demo sync"));
-      }
-
-      setGarminResult(data);
-      await loadDashboardForUser(activeUserId);
-      setError(null);
-    } catch (caughtError) {
-      setError(String(caughtError));
-    } finally {
-      setGarminPending(null);
     }
   }
 
@@ -508,7 +430,6 @@ export function DemoShell({ page }: DemoShellProps) {
               <ActionItemsPanel dashboard={dashboard} />
               <WeeklyPlanPanel items={weeklyOverview} />
               <MonthlyPlanPanel items={monthlyOverview} />
-              <EscalationTimelinePanel timeline={escalationTimeline} />
             </div>
           </section>
         ) : null}
@@ -521,15 +442,7 @@ export function DemoShell({ page }: DemoShellProps) {
               calendarConnected={calendarConnected}
               setCalendarConnected={setCalendarConnected}
             />
-            <GarminPanel
-              garminDemo={garminDemo}
-              garminStatus={garminStatus}
-              garminPending={garminPending}
-              garminResult={garminResult}
-              dashboard={dashboard}
-              activeUserId={activeUserId}
-              onRunScenario={runGarminScenario}
-            />
+            <WearableInsightsPanel goalType={selectedPlan?.goalType} />
           </section>
         ) : null}
       </div>
@@ -546,6 +459,8 @@ export function DemoShell({ page }: DemoShellProps) {
   );
 }
 
+const PLANS_PAGE_SIZE = 5;
+
 function PlansListPanel({
   plans,
   selectedPlanId,
@@ -557,6 +472,33 @@ function PlansListPanel({
   actionPending: string | null;
   onSelectPlan: (plan: PlanRecord) => Promise<void>;
 }) {
+  const [listPage, setListPage] = useState(0);
+
+  const totalPages = Math.max(1, Math.ceil(plans.length / PLANS_PAGE_SIZE));
+
+  useEffect(() => {
+    setListPage((page) => Math.min(page, totalPages - 1));
+  }, [totalPages, plans.length]);
+
+  useEffect(() => {
+    if (!selectedPlanId || plans.length === 0) {
+      return;
+    }
+
+    const index = plans.findIndex((plan) => plan.id === selectedPlanId);
+
+    if (index >= 0) {
+      setListPage(Math.floor(index / PLANS_PAGE_SIZE));
+    }
+  }, [selectedPlanId, plans]);
+
+  const pageOffset = listPage * PLANS_PAGE_SIZE;
+  const pagePlans = plans.slice(pageOffset, pageOffset + PLANS_PAGE_SIZE);
+  const rangeLabel =
+    plans.length === 0
+      ? "0"
+      : `${pageOffset + 1}–${Math.min(pageOffset + PLANS_PAGE_SIZE, plans.length)}`;
+
   return (
     <section className="panel rounded-[1.75rem] p-4 sm:p-5">
       <div className="flex items-center justify-between gap-3">
@@ -572,7 +514,7 @@ function PlansListPanel({
       </div>
 
       <div className="mt-4 grid gap-3">
-        {plans.map((plan) => (
+        {pagePlans.map((plan) => (
           <button
             key={plan.id}
             type="button"
@@ -607,6 +549,35 @@ function PlansListPanel({
           </button>
         ))}
       </div>
+
+      {plans.length > PLANS_PAGE_SIZE ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--line)] pt-4">
+          <p className="text-xs text-[color:var(--muted)]">
+            Showing {rangeLabel} of {plans.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={listPage <= 0}
+              onClick={() => setListPage((p) => Math.max(0, p - 1))}
+              className="rounded-full border border-[color:var(--line)] bg-white/80 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="text-xs tabular-nums text-[color:var(--muted)]">
+              {listPage + 1} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={listPage >= totalPages - 1}
+              onClick={() => setListPage((p) => Math.min(totalPages - 1, p + 1))}
+              className="rounded-full border border-[color:var(--line)] bg-white/80 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {actionPending === "loading-plan" ? (
         <p className="mt-4 text-sm text-[color:var(--muted)]">Loading plan dashboard...</p>
@@ -921,17 +892,19 @@ function WeeklyPlanPanel({
   return (
     <section className="panel rounded-[1.75rem] p-4">
       <p className="label text-[color:var(--muted)]">Next 7 Days</p>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <div className="mt-3 grid max-h-[11rem] grid-cols-2 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4">
         {items.map((item) => (
           <div
             key={`${item.day}-${item.focus}`}
-            className="rounded-[1.25rem] border border-[color:var(--line)] bg-white/72 p-3"
+            className="rounded-lg border border-[color:var(--line)] bg-white/72 p-2"
           >
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold">{item.day}</p>
-              <p className="text-xs text-[color:var(--muted)]">{item.commitment}</p>
+            <div className="flex items-start justify-between gap-1">
+              <p className="text-[11px] font-semibold leading-tight">{item.day}</p>
+              <p className="shrink-0 text-[10px] text-[color:var(--muted)]">
+                {item.commitment}
+              </p>
             </div>
-            <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">
+            <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-[color:var(--muted)]">
               {item.focus}
             </p>
           </div>
@@ -958,43 +931,6 @@ function MonthlyPlanPanel({
             <p className="text-sm font-semibold">{item.month}</p>
             <p className="text-xs leading-5 text-[color:var(--muted)]">
               {item.focus}
-            </p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function EscalationTimelinePanel({
-  timeline,
-}: {
-  timeline: ReturnType<typeof mapEscalationTimeline>;
-}) {
-  return (
-    <section className="panel rounded-[1.75rem] p-4">
-      <p className="label text-[color:var(--muted)]">Escalation timeline</p>
-      <div className="mt-3 grid gap-2">
-        {timeline.map((stage) => (
-          <div
-            key={stage.id}
-            className="rounded-[1.25rem] border border-[color:var(--line)] bg-white/68 p-3"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black text-xs font-semibold text-white">
-                  {stage.id}
-                </div>
-                <div>
-                  <p className="font-semibold">{stage.title}</p>
-                  <p className="text-sm text-[color:var(--muted)]">{stage.channel}</p>
-                </div>
-              </div>
-              <StatusPill status={stage.status} />
-            </div>
-            <p className="mt-2 text-xs font-medium">{stage.scheduledFor}</p>
-            <p className="mt-1 text-xs leading-5 text-[color:var(--muted)]">
-              {stage.note}
             </p>
           </div>
         ))}
@@ -1067,126 +1003,6 @@ function IntegrationStatusPanel({
           </span>
         </p>
       </div>
-    </section>
-  );
-}
-
-function GarminPanel({
-  garminDemo,
-  garminStatus,
-  garminPending,
-  garminResult,
-  dashboard,
-  activeUserId,
-  onRunScenario,
-}: {
-  garminDemo: GarminDemoResponse | null;
-  garminStatus?: NonNullable<
-    NonNullable<DashboardPayload["integrations"]>["garmin"]
-  >;
-  garminPending: string | null;
-  garminResult: GarminSyncResponse | null;
-  dashboard: DashboardPayload | null;
-  activeUserId: string | null;
-  onRunScenario: (scenario: GarminDemoScenario) => Promise<void>;
-}) {
-  return (
-    <section className="panel rounded-[1.75rem] p-4 sm:p-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="label text-[color:var(--signal)]">Garmin integration</p>
-          <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">
-            {garminDemo?.note ??
-              "Garmin activity can confirm whether the workout happened."}
-          </p>
-        </div>
-
-        <div className="rounded-[1.25rem] bg-[#15110d] px-3 py-2 text-xs text-[#f8f1e5]">
-          <p className="label text-[#ffb48f]">Status</p>
-          <p className="mt-2 font-semibold">
-            {garminStatus
-              ? `${garminStatus.status} / ${garminStatus.strikeCount} strike${garminStatus.strikeCount === 1 ? "" : "s"}`
-              : "Not synced yet"}
-          </p>
-          <p className="mt-1 text-xs text-[#dcc8bd]">
-            {garminStatus?.lastSyncAt
-              ? `Last sync ${new Date(garminStatus.lastSyncAt).toLocaleString()}`
-              : "Run a scenario to populate Garmin state."}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-3 md:grid-cols-4">
-        <MetricCard
-          label="Steps"
-          value={garminDemo ? garminDemo.dailySnapshot.steps.toLocaleString() : "--"}
-        />
-        <MetricCard
-          label="Body battery"
-          value={garminDemo ? `${garminDemo.dailySnapshot.bodyBattery}` : "--"}
-        />
-        <MetricCard
-          label="Stress"
-          value={garminDemo ? `${garminDemo.dailySnapshot.averageStress}` : "--"}
-        />
-        <MetricCard
-          label="Expected"
-          value={dashboard?.todayTask.title ?? "--"}
-        />
-      </div>
-
-      <div className="mt-4 grid gap-2">
-        {garminDemo?.scenarios.map((scenario) => (
-          <div
-            key={scenario.id}
-            className="rounded-[1.25rem] border border-[color:var(--line)] bg-white p-3"
-          >
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold">{scenario.label}</p>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${
-                      scenario.expectedOutcome === "match"
-                        ? "bg-[#d9f3e5] text-[color:var(--success)]"
-                        : "bg-[#ffe2d7] text-[color:var(--danger)]"
-                    }`}
-                  >
-                    {scenario.expectedOutcome}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-[color:var(--muted)]">
-                  {scenario.summary}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => void onRunScenario(scenario)}
-                disabled={!activeUserId || garminPending !== null}
-                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {garminPending === scenario.id ? "Syncing..." : "Run scenario"}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {garminResult ? (
-        <div className="mt-3 rounded-[1.25rem] border border-[color:var(--line)] bg-[#15110d] p-3 text-[#f8f1e5]">
-          <p className="label text-[#ffb48f]">Latest Garmin sync result</p>
-          <p className="mt-2 text-xs leading-5">{garminResult.feedback}</p>
-          <p className="mt-2 text-[11px] uppercase tracking-[0.16em] text-[#dcc8bd]">
-            Stage {garminResult.stage} / debt {garminResult.debtCount} /{" "}
-            {garminResult.matched
-              ? "matched"
-              : garminResult.strikeApplied
-                ? "strike applied"
-                : "no extra strike"}
-          </p>
-        </div>
-      ) : null}
     </section>
   );
 }
@@ -1337,8 +1153,6 @@ function getApiErrorMessage(
     | DemoApiResponse
     | PlanLibraryResponse
     | DashboardPayload
-    | GarminDemoResponse
-    | GarminSyncResponse
     | ApiError
     | { ok: boolean }
     | { role: string; content: string },

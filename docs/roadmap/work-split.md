@@ -92,6 +92,9 @@ Garmin is now the chosen first wearable path. The broader wearable platform is s
 - [x] Add fallback flow if provider fails (send in-app coach message + escalation event instead of call)
 - [x] Add demo script path to trigger call stage from command center (`stage 4`)
 - [x] Document legal/safety requirement: only use voice IDs you are authorized to use
+- [x] Frontend call modal now uses backend voice-session routes for live turns and audio playback
+- [x] Mic-first interaction enabled in call modal (speech capture sends turns directly to coach)
+- [x] Coach reply generation now prefers ElevenLabs conversational agent (`ELEVENLABS_AGENT_ID`) with safe fallback if unavailable
 
 ---
 

@@ -30,6 +30,7 @@ Standalone API service for hackathon demo flow.
    - `ELEVENLABS_API_KEY`
    - `ELEVENLABS_VOICE_ID`
    - optional: `ELEVENLABS_MODEL_ID`
+   - optional for ElevenLabs conversational coach replies: `ELEVENLABS_AGENT_ID`
 4. Add Twilio config if you want real outbound phone calls:
    - `TWILIO_ACCOUNT_SID`
    - `TWILIO_AUTH_TOKEN`
@@ -46,7 +47,7 @@ Standalone API service for hackathon demo flow.
 7. Run full demo readiness check:
    - `npm run demo:ready`
 
-`/api/chat` currently works without any LLM key and falls back to a deterministic persona reply, so your demo is not blocked if you skip OpenAI.
+`/api/chat` and voice-session turns can use an ElevenLabs conversational agent when `ELEVENLABS_AGENT_ID` is set. If no agent (and no OpenAI key) is configured, backend falls back to deterministic persona text so your demo is not blocked.
 
 ## Voice Safety Requirement
 

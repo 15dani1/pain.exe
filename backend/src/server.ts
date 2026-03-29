@@ -15,6 +15,7 @@ app.use(cors({ origin: config.frontendOrigin }));
 const MAX_CHAT_MESSAGE_LENGTH = 1200;
 const MAX_VOICE_TEXT_LENGTH = 400;
 const rateLimitStore = new Map<string, { count: number; windowStart: number }>();
+const elevenLabsConnections = new Map<string, ElevenLabsConversationConnection>();
 type GarminActivityInput = {
   activityId?: string;
   name?: string;
@@ -55,6 +56,12 @@ type CallAudioClip = {
   audioBase64: string;
   text: string;
   createdAt: string;
+};
+type ElevenLabsConversationConnection = {
+  socket: any;
+  readyPromise: Promise<void>;
+  pendingResolvers: Array<(value: string) => void>;
+  pendingRejectors: Array<(reason: Error) => void>;
 };
 type ErrorCode =
   | "RATE_LIMITED"
@@ -392,8 +399,236 @@ async function appendFallbackCoachMessage(args: {
   );
 }
 
-async function maybeOpenAIReply(userMessage: string, context: { stage: EscalationStage; debtCount: number }) {
+function hasElevenLabsAgentConfig() {
+  return Boolean(config.elevenLabsApiKey && config.elevenLabsAgentId);
+}
+
+function getRuntimeWebSocketCtor() {
+  const ctor = (globalThis as any).WebSocket;
+  if (!ctor) {
+    throw new Error("WebSocket runtime is not available in this Node environment");
+  }
+  return ctor;
+}
+
+async function getElevenLabsSignedConversationUrl() {
+  if (!hasElevenLabsAgentConfig()) {
+    return null;
+  }
+
+  const url = new URL("https://api.elevenlabs.io/v1/convai/conversation/get-signed-url");
+  url.searchParams.set("agent_id", config.elevenLabsAgentId);
+  url.searchParams.set("include_conversation_id", "true");
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      "xi-api-key": config.elevenLabsApiKey
+    }
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`ElevenLabs signed URL request failed: ${detail}`);
+  }
+
+  const data = (await response.json()) as { signed_url?: string };
+  const signedUrl = String(data.signed_url ?? "").trim();
+  if (!signedUrl) {
+    throw new Error("ElevenLabs signed URL response missing signed_url");
+  }
+  return signedUrl;
+}
+
+function closeElevenLabsConnection(sessionKey: string) {
+  const connection = elevenLabsConnections.get(sessionKey);
+  if (!connection) {
+    return;
+  }
+
+  try {
+    connection.socket?.close?.();
+  } catch {
+    // Ignore socket close failures.
+  }
+
+  for (const rejectPending of connection.pendingRejectors) {
+    rejectPending(new Error("Conversation ended"));
+  }
+  elevenLabsConnections.delete(sessionKey);
+}
+
+async function ensureElevenLabsConnection(sessionKey: string) {
+  const existing = elevenLabsConnections.get(sessionKey);
+  if (existing) {
+    await existing.readyPromise;
+    return existing;
+  }
+
+  const signedUrl = await getElevenLabsSignedConversationUrl();
+  if (!signedUrl) {
+    throw new Error("ELEVENLABS_AGENT_ID or ELEVENLABS_API_KEY is not configured");
+  }
+
+  const WebSocketCtor = getRuntimeWebSocketCtor();
+  const socket = new WebSocketCtor(signedUrl);
+  const pendingResolvers: Array<(value: string) => void> = [];
+  const pendingRejectors: Array<(reason: Error) => void> = [];
+
+  const readyPromise = new Promise<void>((resolve, reject) => {
+    let readyResolved = false;
+    const readyTimeout = setTimeout(() => {
+      if (!readyResolved) {
+        reject(new Error("Timed out waiting for ElevenLabs conversation init"));
+      }
+    }, 15_000);
+
+    socket.addEventListener("open", () => {
+      const initPayload = { type: "conversation_initiation_client_data" };
+      socket.send(JSON.stringify(initPayload));
+    });
+
+    socket.addEventListener("message", (event: any) => {
+      try {
+        const raw = typeof event.data === "string" ? event.data : event.data?.toString?.() ?? "";
+        const data = JSON.parse(raw) as Record<string, any>;
+        const type = String(data.type ?? "");
+
+        if (type === "ping") {
+          const pingEventId =
+            data.ping_event?.event_id ??
+            data.event_id ??
+            "";
+          socket.send(JSON.stringify({ type: "pong", event_id: pingEventId }));
+          return;
+        }
+
+        if (!readyResolved && (type === "conversation_initiation_metadata" || type === "conversation_initiation")) {
+          readyResolved = true;
+          clearTimeout(readyTimeout);
+          resolve();
+          return;
+        }
+
+        if (type === "agent_response") {
+          const text = String(data.agent_response_event?.agent_response ?? data.text ?? "").trim();
+          const nextResolve = pendingResolvers.shift();
+          const nextReject = pendingRejectors.shift();
+          if (nextResolve) {
+            nextResolve(text || "No response returned by ElevenLabs agent.");
+          } else if (nextReject) {
+            nextReject(new Error("Missing resolver for ElevenLabs agent response"));
+          }
+          return;
+        }
+
+        if (type === "internal_error") {
+          const detail = String(data.message ?? "ElevenLabs internal error");
+          const nextReject = pendingRejectors.shift();
+          pendingResolvers.shift();
+          if (nextReject) {
+            nextReject(new Error(detail));
+          }
+          return;
+        }
+      } catch {
+        // Ignore malformed events; fallback timeout handles reply absence.
+      }
+    });
+
+    socket.addEventListener("error", () => {
+      if (!readyResolved) {
+        clearTimeout(readyTimeout);
+        reject(new Error("ElevenLabs websocket connection error"));
+      }
+    });
+
+    socket.addEventListener("close", () => {
+      if (!readyResolved) {
+        clearTimeout(readyTimeout);
+        reject(new Error("ElevenLabs websocket closed before initialization"));
+      }
+      closeElevenLabsConnection(sessionKey);
+    });
+  });
+
+  const connection: ElevenLabsConversationConnection = {
+    socket,
+    readyPromise,
+    pendingResolvers,
+    pendingRejectors
+  };
+
+  elevenLabsConnections.set(sessionKey, connection);
+  await readyPromise;
+  return connection;
+}
+
+async function maybeElevenLabsAgentReply(args: {
+  sessionKey: string;
+  userMessage: string;
+}) {
+  if (!hasElevenLabsAgentConfig()) {
+    return null;
+  }
+
+  const connection = await ensureElevenLabsConnection(args.sessionKey);
+  await connection.readyPromise;
+
+  const replyPromise = new Promise<string>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("Timed out waiting for ElevenLabs agent reply"));
+    }, 20_000);
+
+    connection.pendingResolvers.push((value) => {
+      clearTimeout(timer);
+      resolve(value);
+    });
+    connection.pendingRejectors.push((reason) => {
+      clearTimeout(timer);
+      reject(reason);
+    });
+  });
+
+  connection.socket.send(
+    JSON.stringify({
+      type: "user_message",
+      text: args.userMessage
+    })
+  );
+
+  const reply = await replyPromise;
+  return reply.trim() || null;
+}
+
+async function maybeOpenAIReply(
+  userMessage: string,
+  context: { stage: EscalationStage; debtCount: number; sessionKey?: string }
+) {
+  if (context.sessionKey) {
+    try {
+      const elevenReply = await maybeElevenLabsAgentReply({
+        sessionKey: context.sessionKey,
+        userMessage
+      });
+      if (elevenReply) {
+        console.log(`[llm] provider=elevenlabs-agent session=${context.sessionKey}`);
+        return elevenReply;
+      }
+    } catch (error) {
+      console.warn(
+        `[llm] provider=elevenlabs-agent session=${context.sessionKey} unavailable; falling back`,
+        String(error)
+      );
+    }
+  }
+
   if (!config.openAiApiKey) {
+    if (hasElevenLabsAgentConfig()) {
+      console.warn("[llm] provider=fallback-local (ElevenLabs agent configured but unavailable)");
+    } else {
+      console.warn("[llm] provider=fallback-local (no ElevenLabs agent or OpenAI key configured)");
+    }
     return localCoachReply(userMessage, context.stage, context.debtCount);
   }
 
@@ -430,6 +665,7 @@ async function maybeOpenAIReply(userMessage: string, context: { stage: Escalatio
   });
 
   if (!response.ok) {
+    console.warn(`[llm] provider=openai unavailable; status=${response.status}; falling back local`);
     return localCoachReply(userMessage, context.stage, context.debtCount);
   }
 
@@ -1044,7 +1280,11 @@ app.post("/api/chat", rateLimit(30, 60_000), async (req, res) => {
 
     const stage = boundedStage(Number(escalation?.stage ?? 1));
     const debtCount = Number(plan?.debtCount ?? 0);
-    const coachReply = await maybeOpenAIReply(trimmedMessage, { stage, debtCount });
+    const coachReply = await maybeOpenAIReply(trimmedMessage, {
+      stage,
+      debtCount,
+      sessionKey: `chat:${userId}`
+    });
     const sentAt = nowIso();
 
     await db.collection("escalations").updateOne(
@@ -1638,7 +1878,11 @@ app.post("/api/twilio/media-stream", async (req, res) => {
     const userText = speechResult || "No speech detected.";
     const stage = boundedStage(Number(session.stageAtStart ?? 1));
     const debtCount = Number(session.debtAtStart ?? 0);
-    const coachReply = await maybeOpenAIReply(userText, { stage, debtCount });
+    const coachReply = await maybeOpenAIReply(userText, {
+      stage,
+      debtCount,
+      sessionKey: `call:${sessionId}`
+    });
 
     await db.collection("call_sessions").updateOne(
       { _id: sid },
@@ -1722,6 +1966,7 @@ app.post("/api/twilio/status", async (req, res) => {
           source: "system"
         } satisfies CallTranscriptTurn
       };
+      closeElevenLabsConnection(`call:${sessionId}`);
     }
 
     const db = await withMongoRetry(async () => getDb());
@@ -1902,7 +2147,8 @@ app.post("/api/voice/session/:sessionId/turn", rateLimit(30, 60_000), async (req
 
     const coachReply = await maybeOpenAIReply(trimmed, {
       stage: boundedStage(Number(session.stageAtStart ?? 1)),
-      debtCount: Number(session.debtAtStart ?? 0)
+      debtCount: Number(session.debtAtStart ?? 0),
+      sessionKey: `voice:${sessionId}`
     });
 
     await db.collection("voice_sessions").updateOne(
@@ -1981,6 +2227,7 @@ app.post("/api/voice/session/:sessionId/end", async (req, res) => {
     }
 
     const turnCount = Array.isArray(result.turns) ? result.turns.length : 0;
+    closeElevenLabsConnection(`voice:${sessionId}`);
     return res.json({
       ok: true,
       sessionId,

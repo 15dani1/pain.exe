@@ -320,7 +320,7 @@ export function DemoShell({ page }: DemoShellProps) {
       },
       body: JSON.stringify({
         userId,
-        includeGreetingAudio: true,
+        includeGreetingAudio: false,
       }),
     });
     const data = (await response.json()) as VoiceSessionStartResponse | ApiError;
@@ -329,15 +329,35 @@ export function DemoShell({ page }: DemoShellProps) {
     }
 
     setCallVoiceSessionId(data.sessionId);
+
+    const kickoffResponse = await fetch(
+      `/api/voice/session/${encodeURIComponent(data.sessionId)}/turn`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userText:
+            "Start this call with your default opening accountability question for the user. Keep it short.",
+          includeVoice: true,
+        }),
+      },
+    );
+    const kickoffData = (await kickoffResponse.json()) as VoiceSessionTurnResponse | ApiError;
+    if (!kickoffResponse.ok || !("ok" in kickoffData)) {
+      throw new Error(getApiErrorMessage(kickoffData, "Failed to load agent opening line"));
+    }
+
     setCallConversation((prev) => [
       ...prev,
       {
-        id: `coach-greeting-${Date.now()}`,
+        id: `coach-opening-${Date.now()}`,
         role: "coach",
-        text: data.greeting.text,
+        text: kickoffData.coachReply,
       },
     ]);
-    await playReturnedVoice(data.greeting.voice);
+    await playReturnedVoice(kickoffData.voice);
   }
 
   async function submitCallTurn(userText: string) {

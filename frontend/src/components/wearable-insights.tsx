@@ -129,19 +129,48 @@ function ChartShell({
   );
 }
 
+const AREA_CHART_W = 280;
+const AREA_CHART_PAD = 8;
+
+/** Horizontal position (% from left) of the i-th point, matching SVG path math. */
+function areaChartXPercent(i: number, n: number): number {
+  if (n <= 0) return 0;
+  if (n === 1) return (AREA_CHART_PAD / AREA_CHART_W) * 100;
+  const xStep = (AREA_CHART_W - AREA_CHART_PAD * 2) / (n - 1);
+  return ((AREA_CHART_PAD + i * xStep) / AREA_CHART_W) * 100;
+}
+
+function rollingCalendarLabels(count: number): string[] {
+  if (count === 0) return [];
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - (count - 1 - i));
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  });
+}
+
 function AreaLineChart({
   values,
   color,
   fillId,
+  xLabels,
 }: {
   values: number[];
   color: string;
   fillId: string;
+  /** Defaults to one label per point: last N calendar days (e.g. Mar 23). */
+  xLabels?: string[];
 }) {
+  const axisLabels = useMemo(() => {
+    if (xLabels && xLabels.length === values.length) return xLabels;
+    return rollingCalendarLabels(values.length);
+  }, [values.length, xLabels]);
+
   const { linePath, areaPath, max, min } = useMemo(() => {
-    const w = 280;
+    const w = AREA_CHART_W;
     const h = 96;
-    const pad = 8;
+    const pad = AREA_CHART_PAD;
     const n = values.length;
     if (n === 0) {
       return { linePath: "", areaPath: "", max: 1, min: 0 };
@@ -160,34 +189,56 @@ function AreaLineChart({
   }, [values]);
 
   return (
-    <svg
-      viewBox="0 0 280 96"
-      className="h-28 w-full"
-      preserveAspectRatio="none"
-      aria-hidden
-    >
-      <defs>
-        <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      <path d={areaPath} fill={`url(#${fillId})`} />
-      <path
-        d={linePath}
-        fill="none"
-        stroke={color}
-        strokeWidth="2.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <text x="4" y="14" fill="#6d6257" fontSize="9">
-        {Math.round(max)}
-      </text>
-      <text x="4" y="92" fill="#6d6257" fontSize="9">
-        {Math.round(min)}
-      </text>
-    </svg>
+    <div className="w-full min-w-0">
+      <div className="relative h-28 w-full min-h-0">
+        <svg
+          viewBox={`0 0 ${AREA_CHART_W} 96`}
+          className="h-full w-full"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          <defs>
+            <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+              <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          <path d={areaPath} fill={`url(#${fillId})`} />
+          <path
+            d={linePath}
+            fill="none"
+            stroke={color}
+            strokeWidth="2.25"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 flex w-6 flex-col justify-between py-1 pl-1"
+          aria-hidden
+        >
+          <span className="text-[8px] font-medium leading-none text-[#6d6257]">
+            {Math.round(max)}
+          </span>
+          <span className="text-[8px] font-medium leading-none text-[#6d6257]">
+            {Math.round(min)}
+          </span>
+        </div>
+      </div>
+      {values.length > 0 ? (
+        <div className="relative mt-1 h-5 w-full">
+          {axisLabels.map((label, i) => (
+            <span
+              key={`${label}-${i}`}
+              className="absolute top-0 max-w-[14%] -translate-x-1/2 text-center text-[9px] font-medium leading-tight text-[color:var(--muted)] sm:text-[10px]"
+              style={{ left: `${areaChartXPercent(i, values.length)}%` }}
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

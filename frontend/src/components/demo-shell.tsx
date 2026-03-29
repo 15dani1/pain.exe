@@ -1,8 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import gogginsPic from "@/app/assets/goggins_pic.jpg";
 import { OnboardingWizard } from "@/components/onboarding-wizard";
 import { WearableInsightsPanel } from "@/components/wearable-insights";
 import {
@@ -1156,6 +1158,7 @@ function TrainerCallModal({
   const [draftTranscript, setDraftTranscript] = useState("");
   const [micError, setMicError] = useState<string | null>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
   const shouldSendOnEndRef = useRef(false);
   const transcriptDraftRef = useRef("");
   const speechWindow =
@@ -1276,6 +1279,18 @@ function TrainerCallModal({
     };
   }, []);
 
+  useEffect(() => {
+    const container = transcriptScrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [transcript, draftTranscript]);
+
   const statusLine =
     phase === "dialing"
       ? "Connecting trainer line and preparing voice stream."
@@ -1296,6 +1311,7 @@ function TrainerCallModal({
         : coachSpeaking
           ? "Interrupt"
           : "Start speaking";
+  const avatarPulseActive = phase === "dialing" || coachSpeaking;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm">
@@ -1314,12 +1330,23 @@ function TrainerCallModal({
                 <div className="relative flex h-22 w-22 items-center justify-center rounded-full bg-[rgba(255,107,53,0.12)] sm:h-24 sm:w-24">
                   <span
                     className={`absolute inset-0 rounded-full ${
-                      phase === "dialing"
+                      avatarPulseActive
                         ? "animate-ping bg-[rgba(255,107,53,0.2)]"
                         : "bg-[rgba(24,121,78,0.14)]"
                     }`}
                   />
-                  <div className="relative h-14 w-14 rounded-full bg-[color:var(--foreground)] sm:h-16 sm:w-16" />
+                  <span
+                    className={`absolute inset-[10px] rounded-full ${
+                      coachSpeaking ? "animate-pulse bg-[rgba(255,107,53,0.18)]" : "bg-transparent"
+                    }`}
+                  />
+                  <Image
+                    src={gogginsPic}
+                    alt="Coach Goggins"
+                    width={64}
+                    height={64}
+                    className="relative h-14 w-14 rounded-full border border-[rgba(22,18,15,0.08)] object-cover shadow-[0_10px_24px_rgba(39,26,15,0.18)] sm:h-16 sm:w-16"
+                  />
                 </div>
               </div>
 
@@ -1350,7 +1377,10 @@ function TrainerCallModal({
             <div className="space-y-3">
               <div className="rounded-[1.2rem] border border-[color:var(--line)] bg-[rgba(255,255,255,0.52)] p-3 text-left">
                 <p className="label text-[color:var(--muted)]">Conversation</p>
-                <div className="mt-2 max-h-44 space-y-2 overflow-y-auto pr-1">
+                <div
+                  ref={transcriptScrollRef}
+                  className="mt-2 max-h-44 space-y-2 overflow-y-auto pr-1"
+                >
                   {transcript.length === 0 ? (
                     <p className="text-xs text-[color:var(--muted)]">
                       Waiting for coach greeting...

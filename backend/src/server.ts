@@ -177,12 +177,36 @@ app.get("/health", (_req, res) => {
 
 app.post("/api/onboarding", async (req, res) => {
   try {
-    const { name, goalTitle, targetDate, scheduleConstraints, escalationTolerance } = req.body as {
+    const {
+      name,
+      goalTitle,
+      targetDate,
+      scheduleConstraints,
+      escalationTolerance,
+      phoneNumber,
+      googleCalendarEmail,
+      goalType,
+      baseline,
+      weeklyAvailability,
+      wakeWindow,
+      injuryLimit,
+      trigger,
+      channels
+    } = req.body as {
       name?: string;
       goalTitle?: string;
       targetDate?: string;
       scheduleConstraints?: string;
       escalationTolerance?: string;
+      phoneNumber?: string;
+      googleCalendarEmail?: string;
+      goalType?: string;
+      baseline?: string;
+      weeklyAvailability?: string;
+      wakeWindow?: string;
+      injuryLimit?: string;
+      trigger?: string;
+      channels?: string[];
     };
 
     if (!name || !goalTitle || !targetDate) {
@@ -196,25 +220,53 @@ app.post("/api/onboarding", async (req, res) => {
     const escalations = db.collection("escalations");
 
     const now = new Date();
-    const userInsert = await users.insertOne({ name, createdAt: now });
+    const userInsert = await users.insertOne({
+      name,
+      phoneNumber: phoneNumber ?? "",
+      googleCalendarEmail: googleCalendarEmail ?? "",
+      timezone: "America/New_York",
+      createdAt: now,
+      updatedAt: now
+    });
 
     await goals.insertOne({
       userId: userInsert.insertedId,
       title: goalTitle,
+      goalType: goalType ?? goalTitle,
       targetDate,
       scheduleConstraints: scheduleConstraints ?? "",
       escalationTolerance: escalationTolerance ?? "medium",
+      baseline: baseline ?? "",
+      weeklyAvailability: weeklyAvailability ?? "",
+      wakeWindow: wakeWindow ?? "",
+      injuryLimit: injuryLimit ?? "",
+      trigger: trigger ?? "",
+      channels: Array.isArray(channels) ? channels : [],
       createdAt: now
     });
 
     await plans.insertOne({
       userId: userInsert.insertedId,
+      title: `${goalTitle} plan`,
+      goalType: goalType ?? goalTitle,
+      targetDate,
+      phoneNumber: phoneNumber ?? "",
+      googleCalendarEmail: googleCalendarEmail ?? "",
       todayTask: {
         title: "30-min run",
         dueAt: toIso(new Date(now.getTime() + 6 * 60 * 60 * 1000)),
         status: "pending" as TaskStatus
       },
+      baseline: baseline ?? "",
+      weeklyAvailability: weeklyAvailability ?? "",
+      wakeWindow: wakeWindow ?? "",
+      injuryLimit: injuryLimit ?? "",
+      trigger: trigger ?? "",
+      channels: Array.isArray(channels) ? channels : [],
       debtCount: 0,
+      status: "Active",
+      summary: `${name} committed to ${goalTitle} by ${targetDate}.`,
+      nextMission: "30-min run",
       updatedAt: now
     });
 

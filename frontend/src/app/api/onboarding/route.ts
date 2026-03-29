@@ -11,7 +11,16 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         name: payload.fullName,
         goalTitle: payload.goalType,
+        goalType: payload.goalType,
         targetDate: payload.targetDate,
+        phoneNumber: payload.phoneNumber,
+        googleCalendarEmail: payload.googleCalendarEmail,
+        baseline: payload.baseline,
+        weeklyAvailability: payload.weeklyAvailability,
+        wakeWindow: payload.wakeWindow,
+        injuryLimit: payload.injuryLimit,
+        trigger: payload.trigger,
+        channels: payload.channels,
         scheduleConstraints: [
           payload.weeklyAvailability,
           payload.wakeWindow,

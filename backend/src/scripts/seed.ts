@@ -26,20 +26,35 @@ async function run() {
     _id: userId,
     name: "Demo User",
     email: "demo@painexe.local",
+    phoneNumber: "(305) 555-0142",
+    googleCalendarEmail: "demo@painexe.local",
+    timezone: "America/New_York",
     createdAt: now
   });
 
   await goals.insertOne({
     userId,
     title: "Run a 10k in 8 weeks",
+    goalType: "Half Marathon",
     targetDate: new Date(now.getTime() + 8 * 7 * 24 * 60 * 60 * 1000).toISOString(),
     scheduleConstraints: "Weekdays after 6pm, Saturday morning long run",
     escalationTolerance: "high",
+    baseline: "Runs 2x/week, longest recent run 4 miles.",
+    weeklyAvailability: "Weekdays at 6:00 AM, longer effort on Saturday morning.",
+    wakeWindow: "Wake 5:30 AM, no calls after 9:00 PM.",
+    injuryLimit: "Avoid back-to-back high-impact sessions.",
+    trigger: "Direct accountability with visible debt.",
+    channels: ["In-app", "SMS", "Call"],
     createdAt: now
   });
 
   await plans.insertOne({
     userId,
+    title: "Seeded demo plan",
+    goalType: "Seeded Demo",
+    targetDate: new Date(now.getTime() + 8 * 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    phoneNumber: "(305) 555-0142",
+    googleCalendarEmail: "demo@painexe.local",
     todayTask: {
       title: "20-min punishment run + commitment to tomorrow",
       dueAt: tomorrow.toISOString(),
@@ -50,7 +65,16 @@ async function run() {
       dueAt: yesterday.toISOString(),
       status: "missed"
     },
+    baseline: "Loaded from seeded backend demo user.",
+    weeklyAvailability: "Weekdays after 6pm, Saturday morning long run.",
+    wakeWindow: "Not captured in backend seed yet.",
+    injuryLimit: "Not captured in backend seed yet.",
+    trigger: "Direct accountability with visible debt.",
+    channels: ["In-app", "SMS", "Call"],
     debtCount: 1,
+    status: "Adjustment Needed",
+    summary: "Seeded backend demo user for missed-workout escalation flow.",
+    nextMission: "20-min punishment run + commitment to tomorrow",
     updatedAt: now
   });
 

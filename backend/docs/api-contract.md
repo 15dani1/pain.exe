@@ -2,6 +2,31 @@
 
 Base URL: `http://localhost:4000`
 
+## POST /api/onboarding
+Request:
+```json
+{
+  "name": "Fernando",
+  "goalTitle": "Half Marathon",
+  "goalType": "Half Marathon",
+  "targetDate": "2026-06-20",
+  "phoneNumber": "(305) 555-0142",
+  "googleCalendarEmail": "fernando.demo@gmail.com",
+  "baseline": "Runs 2x/week...",
+  "weeklyAvailability": "Weekdays 6 AM",
+  "wakeWindow": "5:30 AM wake",
+  "injuryLimit": "Avoid back-to-back high impact",
+  "trigger": "Call out avoidance",
+  "channels": ["In-app", "SMS", "Email"],
+  "scheduleConstraints": "Weekdays 6 AM | 5:30 AM wake",
+  "escalationTolerance": "Relentless"
+}
+```
+Response:
+```json
+{ "userId": "<id>" }
+```
+
 ## GET /api/dashboard
 Query params:
 - `userId` (required)

@@ -26,6 +26,7 @@ Standalone API service for hackathon demo flow.
    - `npm install`
    - `npm run seed`
    - `npm run dev`
+   - optional schema alignment for existing demo docs: `npm run backfill:frontend-schema`
 5. Run smoke test (optional):
    - `npm run smoke:test`
 6. Run full demo readiness check:

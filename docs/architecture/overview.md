@@ -18,8 +18,9 @@ Build a web-only coaching app that feels relentless through scheduling, escalati
 
 - Product logic lives in `packages/domain`
 - External services live in `packages/providers`
-- Web UI lives in `apps/web`
-- Background orchestration lives in `apps/worker`
+- Current web UI implementation lives in `frontend/`
+- Current backend API implementation lives in `backend/`
+- A dedicated worker process can still be split out later if queues move beyond hackathon scope
 
 ## Non-Negotiables
 

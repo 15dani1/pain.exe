@@ -1,5 +1,15 @@
 # Milestone 04: Demo Polish
 
+## Status
+
+- [x] Seeded demo account and seeded missed-workout storyline exist
+- [x] Frontend has a polished mobile-first trainee flow
+- [x] Fallback-safe persona language is represented in the product copy and backend degraded-mode handling
+- [x] Demo reset and demo readiness scripts exist on the backend
+- [ ] Full observability stack is not wired yet
+- [ ] Final end-to-end demo script should still be run repeatedly after frontend hits live backend endpoints
+- In progress: this milestone is underway, with integration and rehearsal as the main remaining work
+
 ## Objective
 
 Turn the working system into a crisp, emotionally convincing hackathon story.

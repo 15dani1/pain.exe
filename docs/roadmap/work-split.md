@@ -37,15 +37,22 @@ That's the demo. Build only what serves that story.
 **Stack:** Next.js App Router, Tailwind, shadcn/ui
 
 ### Hours 1–4
-- [ ] App shell (layout, nav, fonts, color tokens)
-- [ ] Onboarding flow — 3 screens max: goal + target date, schedule constraints, escalation tolerance. Writes to DB on submit.
-- [ ] Daily command center skeleton — today's mission card, countdown clock, compliance score
+- [x] App shell (layout, nav, fonts, color tokens)
+- [x] Onboarding flow — 3 screens max: goal + target date, schedule constraints, escalation tolerance. Now proxies Rahul's backend onboarding endpoint through the frontend.
+- [x] Daily command center skeleton — today's mission card, countdown clock, compliance score
 
 ### Hours 5–7
-- [ ] Message thread — scrollable list of coach messages, reply input (sends to `/api/chat`)
-- [ ] Escalation ladder — visual showing current stage (highlight stage 2 or 3 for demo)
-- [ ] Recovery action card — "Do this instead" CTA with accept/snooze buttons
-- [ ] Missed workout debt banner — make it feel urgent
+- [x] Message thread — scrollable list of coach messages
+- [x] Escalation ladder — visual showing current stage
+- [x] Recovery action card — "Do this instead" CTA surface is present in the command center
+- [x] Missed workout debt banner — debt and urgency are visible in the command center
+
+### Integration Status
+- [x] Rahul's backend covers the demo-critical API surface
+- [x] Fernando's frontend covers the demo-critical UI surface
+- [x] Frontend data fetching and actions are now proxied to backend `/api/dashboard`, `/api/onboarding`, `/api/checkin`, `/api/recovery`, and `/api/chat`
+- [ ] Remaining blocker: configure `MONGODB_URI` and run Rahul's backend service locally for end-to-end runtime verification
+- [ ] Next backend improvement: expose plan/goal listing endpoints so saved plan history can be fully backend-backed instead of partially client-persisted
 
 **Demo-critical visual:** the dashboard should look dramatic when a workout is missed. Think red debt counter, escalation stage highlighted, coach message visible.
 

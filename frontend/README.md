@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend (Fernando)
 
-## Getting Started
+Next.js App Router trainee console for the hackathon demo.
 
-First, run the development server:
+## What Is Implemented
+
+- trainee-first onboarding flow
+- saved plans and selected settings view
+- daily command center
+- escalation timeline
+- message loop
+- integration status cards
+- local stub endpoints for demo wiring
+
+## Local Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Backend Integration
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Copy the frontend env file:
+   - `cp .env.example .env.local`
+2. Set `BACKEND_BASE_URL` if Rahul's backend is not running at `http://127.0.0.1:4000`
+3. Start Rahul's backend from [backend/README.md](/Users/fzapata99/Documents/pain.exe/pain.exe/backend/README.md)
 
-## Learn More
+The frontend now proxies live requests for onboarding, demo bootstrap, dashboard, chat, check-in, and recovery through its own `/api/*` routes.
 
-To learn more about Next.js, take a look at the following resources:
+## Key Files
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- [src/app/page.tsx](/Users/fzapata99/Documents/pain.exe/pain.exe/frontend/src/app/page.tsx)
+- [src/components/home-page.tsx](/Users/fzapata99/Documents/pain.exe/pain.exe/frontend/src/components/home-page.tsx)
+- [src/components/onboarding-wizard.tsx](/Users/fzapata99/Documents/pain.exe/pain.exe/frontend/src/components/onboarding-wizard.tsx)
+- [src/lib/demo-data.ts](/Users/fzapata99/Documents/pain.exe/pain.exe/frontend/src/lib/demo-data.ts)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Current API Stubs
 
-## Deploy on Vercel
+- `GET /api/demo` now proxies backend demo bootstrap and dashboard state
+- `POST /api/onboarding` now proxies Rahul's backend onboarding flow
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The remaining client-side-only persistence is saved plan/settings history for fields the backend does not yet expose in plan/goal listing endpoints.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Next Integration Step
+
+Point the frontend at the backend contract documented in [backend/docs/api-contract.md](/Users/fzapata99/Documents/pain.exe/pain.exe/backend/docs/api-contract.md), especially:
+
+- `GET /api/dashboard`
+- `POST /api/onboarding`
+- `POST /api/checkin`
+- `POST /api/recovery`
+- `POST /api/chat`

@@ -1,5 +1,16 @@
 # Milestone 03: Escalations And Integrations
 
+## Status
+
+- [x] Escalation stage machine is implemented in backend check-in handling
+- [x] Idempotent missed-event escalation handling is implemented
+- [x] Frontend escalation timeline and integration status UI are implemented
+- [x] Voice preview path exists with fallback behavior
+- [ ] Real Google Calendar event creation is not wired yet
+- [ ] Real wearable verification path is not wired yet
+- [ ] Twilio delivery is still represented as a demo/stub surface
+- In progress: this milestone is partially complete and in a good place for frontend-to-backend integration
+
 ## Objective
 
 Connect the core coaching loop to real-world pressure channels so the agent can act beyond the browser.

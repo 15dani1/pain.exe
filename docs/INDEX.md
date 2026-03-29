@@ -22,3 +22,4 @@ Each doc is written as an implementation brief. They are meant to become tickets
 - [Milestone 03: Escalations And Integrations](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/milestone-03-escalations-and-integrations.md)
 - [Milestone 04: Demo Polish](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/milestone-04-demo-polish.md)
 - [Team Roles And Ownership](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/team-roles.md)
+- [Work Split](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/work-split.md)

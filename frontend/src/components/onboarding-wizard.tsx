@@ -2,6 +2,7 @@
 
 import { startTransition, useMemo, useState } from "react";
 import {
+  getTrainingPlanPreview,
   goalOptions,
   onboardingDefaults,
   type OnboardingPayload,
@@ -13,6 +14,7 @@ const steps = [
   "Baseline",
   "Schedule",
   "Escalation",
+  "Preview",
 ] as const;
 
 type StepKey = (typeof steps)[number];
@@ -25,11 +27,17 @@ export function OnboardingWizard({ onFinish }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<OnboardingResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<OnboardingPayload>(onboardingDefaults);
 
   const progress = useMemo(
     () => Math.round(((stepIndex + 1) / steps.length) * 100),
     [stepIndex],
+  );
+
+  const previewItems = useMemo(
+    () => getTrainingPlanPreview(form.goalType),
+    [form.goalType],
   );
 
   function update<K extends keyof OnboardingPayload>(
@@ -51,6 +59,7 @@ export function OnboardingWizard({ onFinish }: Props) {
 
   async function submit() {
     setSubmitting(true);
+    setError(null);
 
     try {
       const response = await fetch("/api/onboarding", {
@@ -61,12 +70,24 @@ export function OnboardingWizard({ onFinish }: Props) {
         body: JSON.stringify(form),
       });
 
-      const data = (await response.json()) as OnboardingResult;
+      const data = (await response.json()) as
+        | OnboardingResult
+        | { error?: string; code?: string; detail?: string };
+
+      if (!response.ok || !("userId" in data)) {
+        throw new Error(
+          "error" in data && typeof data.error === "string" && data.error
+            ? data.error
+            : "Failed to create plan",
+        );
+      }
 
       startTransition(() => {
         setResult(data);
         onFinish(form, data);
       });
+    } catch (caughtError) {
+      setError(String(caughtError));
     } finally {
       setSubmitting(false);
     }
@@ -84,11 +105,12 @@ export function OnboardingWizard({ onFinish }: Props) {
           <div>
             <p className="label text-[color:var(--signal)]">Create a new plan</p>
             <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">
-              Start here
+              Onboard, preview, then commit
             </h2>
             <p className="mt-2 max-w-xl text-base leading-7 text-[color:var(--muted)]">
-              Fill in the essentials, review your settings, and generate a new
-              training plan stub.
+              A new trainee should be able to define the plan, validate what the
+              experience will feel like, and understand the training cadence
+              before pressing create.
             </p>
           </div>
 
@@ -104,7 +126,7 @@ export function OnboardingWizard({ onFinish }: Props) {
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-5">
           {steps.map((step, index) => (
             <button
               key={step}
@@ -130,6 +152,14 @@ export function OnboardingWizard({ onFinish }: Props) {
                   <input
                     value={form.fullName}
                     onChange={(event) => update("fullName", event.target.value)}
+                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 outline-none focus:border-black/50"
+                  />
+                </Field>
+                <Field label="Phone number for SMS and call previews">
+                  <input
+                    value={form.phoneNumber}
+                    onChange={(event) => update("phoneNumber", event.target.value)}
+                    placeholder="(555) 555-5555"
                     className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 outline-none focus:border-black/50"
                   />
                 </Field>
@@ -203,6 +233,16 @@ export function OnboardingWizard({ onFinish }: Props) {
                     className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 outline-none focus:border-black/50"
                   />
                 </Field>
+                <Field label="Google Calendar email">
+                  <input
+                    value={form.googleCalendarEmail}
+                    onChange={(event) =>
+                      update("googleCalendarEmail", event.target.value)
+                    }
+                    placeholder="you@gmail.com"
+                    className="w-full rounded-2xl border border-[color:var(--line)] bg-white px-4 py-3 outline-none focus:border-black/50"
+                  />
+                </Field>
               </div>
             ) : null}
 
@@ -261,6 +301,53 @@ export function OnboardingWizard({ onFinish }: Props) {
               </div>
             ) : null}
 
+            {currentStep === "Preview" ? (
+              <div className="grid gap-5">
+                <div className="rounded-[1.5rem] border border-[color:var(--line)] bg-[#fffaf1] p-4">
+                  <p className="label text-[color:var(--signal)]">Plan validation</p>
+                  <p className="mt-2 text-base leading-7">
+                    You&apos;re signing up for a plan that uses{" "}
+                    <span className="font-semibold">{form.goalType}</span> training,
+                    escalation via <span className="font-semibold">{form.channels.join(", ")}</span>,
+                    and calendar pressure aimed at <span className="font-semibold">{form.googleCalendarEmail}</span>.
+                  </p>
+                </div>
+
+                <div className="grid gap-3">
+                  {previewItems.map((item) => (
+                    <div
+                      key={`${item.day}-${item.title}`}
+                      className="rounded-[1.5rem] border border-[color:var(--line)] bg-white p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold">{item.day}</p>
+                        <span className="rounded-full bg-[#efe2cf] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em]">
+                          Sample block
+                        </span>
+                      </div>
+                      <p className="mt-2 text-lg font-medium">{item.title}</p>
+                      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                        {item.detail}
+                      </p>
+                      <p className="mt-2 text-sm leading-6">
+                        <span className="font-semibold">Why it exists:</span> {item.intent}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-[1.5rem] border border-[color:var(--line)] bg-white p-4">
+                  <p className="label text-[color:var(--signal)]">What the experience feels like</p>
+                  <ul className="mt-3 grid gap-3 text-sm leading-6">
+                    <li>Calendar blocks appear before the first week is over.</li>
+                    <li>Missed sessions become visible debt, not silent failures.</li>
+                    <li>Texts and calls escalate only if you allow those channels.</li>
+                    <li>The coach keeps continuity and references recent misses.</li>
+                  </ul>
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
               <button
                 type="button"
@@ -298,19 +385,35 @@ export function OnboardingWizard({ onFinish }: Props) {
             <p className="label text-[#ffb48f]">Selected settings</p>
             <div className="mt-4 grid gap-3 text-sm">
               <SettingsRow label="Goal" value={form.goalType} />
+              <SettingsRow label="Phone" value={form.phoneNumber} />
+              <SettingsRow label="Calendar" value={form.googleCalendarEmail} />
               <SettingsRow label="Deadline" value={form.targetDate} />
-              <SettingsRow
-                label="Tolerance"
-                value={form.escalationTolerance}
-              />
+              <SettingsRow label="Tolerance" value={form.escalationTolerance} />
               <SettingsRow label="Channels" value={form.channels.join(", ")} />
             </div>
 
             <div className="mt-5 rounded-[1.5rem] bg-black/25 p-4">
-              <p className="label text-[#ffb48f]">Submission payload</p>
-              <pre className="mt-3 overflow-x-auto text-xs leading-6 text-[#f3ddcf]">
-                {JSON.stringify(form, null, 2)}
-              </pre>
+              <p className="label text-[#ffb48f]">Preview outreach</p>
+              <div className="mt-3 grid gap-3 text-sm text-[#f3ddcf]">
+                <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-3">
+                  <p className="font-semibold">SMS to {form.phoneNumber}</p>
+                  <p className="mt-2 leading-6">
+                    Workout due soon. Confirm the block on your calendar or own the miss.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-3">
+                  <p className="font-semibold">Call preview</p>
+                  <p className="mt-2 leading-6">
+                    If you ignore the plan, the coach escalates with a short voice follow-up.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/6 px-3 py-3">
+                  <p className="font-semibold">Calendar target</p>
+                  <p className="mt-2 leading-6">
+                    Training blocks will be staged for {form.googleCalendarEmail}.
+                  </p>
+                </div>
+              </div>
             </div>
 
             {result ? (
@@ -320,6 +423,13 @@ export function OnboardingWizard({ onFinish }: Props) {
                 <p className="mt-3 text-sm leading-6 text-[#d8c3b6]">
                   {result.summary}
                 </p>
+              </div>
+            ) : null}
+
+            {error ? (
+              <div className="mt-5 rounded-[1.5rem] border border-[#ffb48f]/20 bg-[#44261a] p-4 text-sm text-[#ffd8c7]">
+                <p className="font-semibold">Could not create plan</p>
+                <p className="mt-2 leading-6">{error}</p>
               </div>
             ) : null}
           </aside>

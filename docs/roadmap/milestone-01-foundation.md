@@ -1,5 +1,14 @@
 # Milestone 01: Foundation
 
+## Status
+
+- [x] Repo scaffolding exists for planning, backend, and frontend work
+- [x] Backend environment contract exists in `backend/.env.example`
+- [x] Initial Mongo-backed backend entities and seed flow are implemented
+- [x] Frontend app shell, navigation, and design direction are implemented in `frontend/`
+- [x] Seeded demo persona and sample user profile exist across backend seed data and frontend demo state
+- [x] This milestone is effectively complete
+
 ## Objective
 
 Create the minimum shared base that lets the team build in parallel without reworking core assumptions.

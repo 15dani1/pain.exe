@@ -1,5 +1,14 @@
 # Milestone 02: Core Agent Loop
 
+## Status
+
+- [x] Onboarding flow exists in the frontend and can submit a normalized payload
+- [x] First-pass plan creation contract exists through `POST /api/onboarding`
+- [x] Daily command center is implemented in the frontend
+- [x] In-app message thread UI is implemented
+- [x] Seeded account continuity exists in both backend demo state and frontend saved plans
+- [x] This milestone is effectively complete for the hackathon demo slice
+
 ## Objective
 
 Make the product feel like a personal AI agent with memory, initiative, and follow-through inside the web app.

@@ -2,7 +2,7 @@
 
 `pain.exe` is a web-first personal AI agent for discipline, fitness, and goal adherence. It helps people turn intentions into completed actions by combining plan generation, accountability, calendar pressure, wearable verification, escalating reminders, and voice-based follow-up into one coaching loop.
 
-This repository is intentionally planning-first right now. It establishes the product story, committed technology stack, system boundaries, and milestone roadmap so the hackathon team can align quickly and build against a shared blueprint.
+This repository started planning-first and now includes both a working `backend/` API service and a working `frontend/` trainee console. The docs below still preserve the original planning structure, but the implementation status and repo map have been updated to reflect what Rahul and Fernando have actually built.
 
 ## Problem
 
@@ -83,11 +83,10 @@ These are the technologies we are committing to for the hackathon build:
 
 ```text
 .
-|-- apps/
-|   |-- web/
-|   |   `-- README.md
-|   `-- worker/
-|       `-- README.md
+|-- backend/
+|   |-- docs/
+|   |-- scripts/
+|   `-- src/
 |-- packages/
 |   |-- config/
 |   |   `-- README.md
@@ -124,11 +123,22 @@ These are the technologies we are committing to for the hackathon build:
 |   |   |-- milestone-02-core-agent-loop.md
 |   |   |-- milestone-03-escalations-and-integrations.md
 |   |   |-- milestone-04-demo-polish.md
+|   |   |-- work-split.md
 |   |   `-- team-roles.md
 |   `-- INDEX.md
+|-- frontend/
+|   |-- public/
+|   `-- src/
 `-- scripts/
     `-- README.md
 ```
+
+## Current Implementation Status
+
+- Backend API scaffold is in place in [backend/README.md](/Users/fzapata99/Documents/pain.exe/pain.exe/backend/README.md)
+- Frontend trainee console is in place in [frontend/README.md](/Users/fzapata99/Documents/pain.exe/pain.exe/frontend/README.md)
+- Work split tracking lives in [docs/roadmap/work-split.md](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/work-split.md)
+- Backend progress tracking lives in [backend/docs/backend-progress.md](/Users/fzapata99/Documents/pain.exe/pain.exe/backend/docs/backend-progress.md)
 
 ## How To Use This Repo
 
@@ -148,9 +158,9 @@ These are the technologies we are committing to for the hackathon build:
 
 ## Team Build Order
 
-1. `apps/web`: landing, onboarding, seeded demo account, command center.
-2. `packages/domain`: shared types, policies, plan generation contracts.
-3. `apps/worker`: delayed jobs, escalation timers, webhook handling.
+1. `backend`: seeded data, API contracts, escalation logic, demo reset, and smoke checks.
+2. `frontend`: trainee onboarding, saved plans, command center, escalation UI, and local stub integration points.
+3. `packages/domain`: shared types, policies, and plan generation contracts if the app is consolidated later.
 4. `packages/providers`: Twilio, ElevenLabs, calendar, wearable adapters.
 5. `packages/ui`: reusable interface components and design tokens.
 
@@ -162,3 +172,4 @@ These are the technologies we are committing to for the hackathon build:
 - [Milestone 03: Escalations And Integrations](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/milestone-03-escalations-and-integrations.md)
 - [Milestone 04: Demo Polish](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/milestone-04-demo-polish.md)
 - [Team Roles And Ownership](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/team-roles.md)
+- [Work Split](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/work-split.md)

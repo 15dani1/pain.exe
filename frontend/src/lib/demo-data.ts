@@ -7,6 +7,8 @@ export type GoalType =
 
 export type OnboardingPayload = {
   fullName: string;
+  phoneNumber: string;
+  googleCalendarEmail: string;
   goalType: GoalType;
   targetDate: string;
   baseline: string;
@@ -29,9 +31,12 @@ export type OnboardingResult = {
 
 export type PlanRecord = {
   id: string;
+  userId: string;
   title: string;
-  goalType: GoalType;
+  goalType: GoalType | "Seeded Demo";
   targetDate: string;
+  phoneNumber: string;
+  googleCalendarEmail: string;
   createdAt: string;
   status: "Active" | "Adjustment Needed" | "Completed";
   nextMission: string;
@@ -41,8 +46,15 @@ export type PlanRecord = {
   wakeWindow: string;
   injuryLimit: string;
   trigger: string;
-  escalationTolerance: OnboardingPayload["escalationTolerance"];
+  escalationTolerance: OnboardingPayload["escalationTolerance"] | "High";
   channels: string[];
+};
+
+export type TrainingPlanPreviewItem = {
+  day: string;
+  title: string;
+  detail: string;
+  intent: string;
 };
 
 export type Message = {
@@ -54,7 +66,7 @@ export type Message = {
   text: string;
 };
 
-export type EscalationStage = {
+export type EscalationStageView = {
   id: number;
   title: string;
   channel: string;
@@ -65,7 +77,7 @@ export type EscalationStage = {
 
 export type IntegrationStatus = {
   name: string;
-  state: "Stubbed" | "Ready For Wiring" | "Seeded Demo";
+  state: "Stubbed" | "Ready For Wiring" | "Seeded Demo" | "Integrated";
   detail: string;
 };
 
@@ -74,6 +86,43 @@ export type BackendStub = {
   endpoint: string;
   status: string;
   note: string;
+};
+
+export type DashboardPayload = {
+  user: { name: string };
+  todayTask: {
+    title: string;
+    dueAt: string;
+    status: "pending" | "missed" | "done";
+  };
+  debtCount: number;
+  escalation: {
+    stage: 1 | 2 | 3 | 4 | 5;
+    lastActionAt: string;
+  };
+  recentMessages: {
+    role: "coach" | "user";
+    content: string;
+    sentAt: string;
+  }[];
+  recoveryAction: {
+    title: string;
+    description: string;
+  } | null;
+  escalationEvents: {
+    type: "reminder_sent" | "sms_sent" | "call_placed";
+    label: string;
+    at: string;
+  }[];
+};
+
+export type DemoApiResponse = {
+  ok: true;
+  userId: string;
+  dashboard: DashboardPayload;
+  integrations: IntegrationStatus[];
+  backendStubs: BackendStub[];
+  demoPlan: PlanRecord;
 };
 
 export const goalOptions: GoalType[] = [
@@ -86,6 +135,8 @@ export const goalOptions: GoalType[] = [
 
 export const onboardingDefaults: OnboardingPayload = {
   fullName: "Fernando",
+  phoneNumber: "(305) 555-0142",
+  googleCalendarEmail: "fernando.demo@gmail.com",
   goalType: "Half Marathon",
   targetDate: "2026-06-20",
   baseline: "Runs 2x/week, longest recent run 4 miles, lifting twice weekly.",
@@ -96,136 +147,6 @@ export const onboardingDefaults: OnboardingPayload = {
   escalationTolerance: "Relentless",
   channels: ["In-app", "SMS", "Email"],
 };
-
-export const demoSummary = {
-  coachName: "Goggins-mode / Inspired-by fallback",
-  activeMission: "6.2 mile threshold run before 7:15 AM",
-  dueAt: "2026-03-28T07:15:00-04:00",
-  completionRate: 82,
-  streakDays: 11,
-  debtHours: 19,
-  redemption:
-    "If the run is missed, complete a 45-minute incline walk plus 200 weighted step-ups before lights out.",
-  complianceNote:
-    "The agent has detected a pattern: excuses spike after poor sleep and unread calendar blocks.",
-};
-
-export const seededPlans: PlanRecord[] = [
-  {
-    id: "plan_week_zero_001",
-    title: "Half marathon base block",
-    goalType: "Half Marathon",
-    targetDate: "2026-06-20",
-    createdAt: "2026-03-20",
-    status: "Adjustment Needed",
-    nextMission: "Tomorrow 6:00 AM: 4-mile tempo progression plus mobility reset.",
-    summary:
-      "Primary race-prep block focused on speed endurance, consistency, and early-morning compliance.",
-    baseline: onboardingDefaults.baseline,
-    weeklyAvailability: onboardingDefaults.weeklyAvailability,
-    wakeWindow: onboardingDefaults.wakeWindow,
-    injuryLimit: onboardingDefaults.injuryLimit,
-    trigger: onboardingDefaults.trigger,
-    escalationTolerance: "Relentless",
-    channels: ["In-app", "SMS", "Email"],
-  },
-  {
-    id: "plan_reset_002",
-    title: "Discipline reset week",
-    goalType: "Daily Discipline",
-    targetDate: "2026-04-05",
-    createdAt: "2026-03-12",
-    status: "Completed",
-    nextMission: "5:30 AM wake, no snooze, 20-minute outdoor walk.",
-    summary:
-      "Short reset block used to rebuild morning follow-through after two missed workouts.",
-    baseline: "Low energy week, reduced running volume, still capable of daily low-impact sessions.",
-    weeklyAvailability: "Daily mornings before work, 25-45 minutes available.",
-    wakeWindow: "Wake 5:30 AM, lights out 10:15 PM.",
-    injuryLimit: "Keep impact light. Prioritize consistency over intensity.",
-    trigger: "Use identity language and visible debt tracking.",
-    escalationTolerance: "Measured",
-    channels: ["In-app", "Email"],
-  },
-];
-
-export const demoMessages: Message[] = [
-  {
-    id: "m1",
-    channel: "In-app",
-    tone: "Controlled",
-    sender: "Coach",
-    sentAt: "05:40 AM",
-    text: "Your run starts in 20 minutes. The door is open. Your excuse window is closing.",
-  },
-  {
-    id: "m2",
-    channel: "SMS",
-    tone: "Pressure",
-    sender: "System",
-    sentAt: "07:24 AM",
-    text: "Workout overdue. Calendar block ended nine minutes ago. Reply DONE, SNOOZE, or OWN IT.",
-  },
-  {
-    id: "m3",
-    channel: "In-app",
-    tone: "Pressure",
-    sender: "Coach",
-    sentAt: "07:31 AM",
-    text: "You asked for discipline, not comfort. This gets harder until you answer.",
-  },
-  {
-    id: "m4",
-    channel: "Call",
-    tone: "Recovery",
-    sender: "Coach",
-    sentAt: "07:40 AM",
-    text: "Voicemail fallback queued. Redemption plan drafted and waiting for confirmation.",
-  },
-];
-
-export const escalationStages: EscalationStage[] = [
-  {
-    id: 1,
-    title: "Mission Reminder",
-    channel: "In-app",
-    status: "completed",
-    scheduledFor: "05:40 AM",
-    note: "Sent 20 minutes before the run with identity-based framing.",
-  },
-  {
-    id: 2,
-    title: "Deadline Breach",
-    channel: "SMS",
-    status: "completed",
-    scheduledFor: "07:24 AM",
-    note: "Triggered exactly once after the workout window elapsed.",
-  },
-  {
-    id: 3,
-    title: "Full-Screen Interrupt",
-    channel: "In-app modal",
-    status: "active",
-    scheduledFor: "07:31 AM",
-    note: "Active now. User must resolve, snooze, or accept redemption.",
-  },
-  {
-    id: 4,
-    title: "Voice Pressure Call",
-    channel: "Twilio + ElevenLabs",
-    status: "pending",
-    scheduledFor: "07:40 AM",
-    note: "Stubbed for now, wired later through worker jobs and consent gates.",
-  },
-  {
-    id: 5,
-    title: "Recovery Follow-Up",
-    channel: "SMS + in-app",
-    status: "pending",
-    scheduledFor: "08:05 AM",
-    note: "Queues only if the user still has not acknowledged the miss.",
-  },
-];
 
 export const integrationStatuses: IntegrationStatus[] = [
   {
@@ -245,53 +166,31 @@ export const integrationStatuses: IntegrationStatus[] = [
   },
   {
     name: "ElevenLabs Voice",
-    state: "Stubbed",
-    detail: "Voice stage is modeled with fallback-safe persona controls.",
+    state: "Integrated",
+    detail: "Backend voice preview exists and can be used when chat voice is enabled.",
   },
 ];
 
 export const backendStubs: BackendStub[] = [
   {
-    surface: "Onboarding submission",
+    surface: "Frontend proxy onboarding",
     endpoint: "/api/onboarding",
-    status: "Implemented as local stub",
-    note: "Returns normalized IDs, a mission summary, and a caution for future server action wiring.",
+    status: "Integrated",
+    note: "Maps trainee onboarding inputs onto Rahul's backend onboarding contract.",
   },
   {
-    surface: "Seeded agent state",
+    surface: "Frontend demo bootstrap",
     endpoint: "/api/demo",
-    status: "Implemented as local stub",
-    note: "Supplies dashboard, messaging, integration, escalation, and saved-plan data.",
+    status: "Integrated",
+    note: "Loads seeded demo user plus dashboard state from the backend service.",
   },
   {
-    surface: "Plan generation",
-    endpoint: "server action placeholder",
-    status: "UI stubbed",
-    note: "Onboarding completion simulates a generated first mission while keeping the contract obvious.",
+    surface: "Command center actions",
+    endpoint: "/api/chat, /api/checkin, /api/recovery",
+    status: "Integrated",
+    note: "Frontend actions proxy through Next.js route handlers to Rahul's backend.",
   },
 ];
-
-export function buildOnboardingResponse(
-  payload: OnboardingPayload,
-): OnboardingResult {
-  const missionByGoal: Record<GoalType, string> = {
-    "Half Marathon": "Tomorrow 6:00 AM: 4-mile tempo progression plus mobility reset.",
-    "Weight Loss": "Tomorrow 6:15 AM: 35-minute incline walk plus protein-first breakfast check-in.",
-    "Strength Block": "Tomorrow 5:45 AM: lower-body strength session with recovery walk finisher.",
-    "Daily Discipline": "Tomorrow 5:30 AM: wake, hydrate, journal, 20-minute outdoor walk, no snooze.",
-    "Custom Mission": "Tomorrow 6:00 AM: first custom mission block scheduled and locked in.",
-  };
-
-  return {
-    userId: "user_demo_fernando",
-    goalId: `goal_${payload.goalType.toLowerCase().replace(/\s+/g, "_")}_001`,
-    planId: `plan_${payload.goalType.toLowerCase().replace(/\s+/g, "_")}_${payload.targetDate}`,
-    summary: `${payload.fullName} committed to ${payload.goalType.toLowerCase()} by ${payload.targetDate} with ${payload.escalationTolerance.toLowerCase()} accountability across ${payload.channels.join(", ")}.`,
-    nextMission: missionByGoal[payload.goalType],
-    caution:
-      "Backend not wired yet: this response is a local contract stub standing in for user, goal, escalation, and plan creation.",
-  };
-}
 
 export function createPlanRecord(
   payload: OnboardingPayload,
@@ -299,10 +198,13 @@ export function createPlanRecord(
 ): PlanRecord {
   return {
     id: result.planId,
+    userId: result.userId,
     title: `${payload.goalType} plan`,
     goalType: payload.goalType,
     targetDate: payload.targetDate,
-    createdAt: "2026-03-28",
+    phoneNumber: payload.phoneNumber,
+    googleCalendarEmail: payload.googleCalendarEmail,
+    createdAt: new Date().toISOString(),
     status: "Active",
     nextMission: result.nextMission,
     summary: result.summary,
@@ -314,4 +216,248 @@ export function createPlanRecord(
     escalationTolerance: payload.escalationTolerance,
     channels: payload.channels,
   };
+}
+
+export function createDemoPlan(
+  userId: string,
+  dashboard: DashboardPayload,
+): PlanRecord {
+  return {
+    id: `seeded-demo-${userId}`,
+    userId,
+    title: "Seeded demo plan",
+    goalType: "Seeded Demo",
+    targetDate: new Date(
+      Date.now() + 8 * 7 * 24 * 60 * 60 * 1000,
+    ).toISOString().slice(0, 10),
+    phoneNumber: "(305) 555-0142",
+    googleCalendarEmail: "demo@painexe.local",
+    createdAt: new Date().toISOString(),
+    status: dashboard.todayTask.status === "missed" ? "Adjustment Needed" : "Active",
+    nextMission: dashboard.todayTask.title,
+    summary:
+      "Seeded backend demo user used to validate the missed-workout escalation story and live command center integration.",
+    baseline: "Loaded from seeded backend demo user.",
+    weeklyAvailability: "Weekdays after 6pm, Saturday morning long run.",
+    wakeWindow: "Not captured in backend seed yet.",
+    injuryLimit: "Not captured in backend seed yet.",
+    trigger: "Direct accountability with visible debt.",
+    escalationTolerance: "High",
+    channels: ["In-app", "SMS", "Call"],
+  };
+}
+
+export function mapDashboardMessages(
+  messages: DashboardPayload["recentMessages"],
+): Message[] {
+  return messages.map((message, index) => ({
+    id: `${message.sentAt}-${index}`,
+    channel: index === messages.length - 1 && message.role === "coach" ? "In-app" : "SMS",
+    tone:
+      message.role === "user"
+        ? "Controlled"
+        : message.content.toLowerCase().includes("clear debt")
+          ? "Recovery"
+          : "Pressure",
+    sender: message.role === "coach" ? "Coach" : "You",
+    sentAt: new Date(message.sentAt).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+    text: message.content,
+  }));
+}
+
+export function mapEscalationTimeline(
+  stage: DashboardPayload["escalation"]["stage"],
+  events: DashboardPayload["escalationEvents"],
+): EscalationStageView[] {
+  const eventMap = new Map(events.map((event) => [event.type, event]));
+
+  return [
+    {
+      id: 1,
+      title: "Mission Reminder",
+      channel: "In-app",
+      status: stage > 1 ? "completed" : stage === 1 ? "active" : "pending",
+      scheduledFor: formatEventTime(eventMap.get("reminder_sent")?.at),
+      note: "Initial accountability ping before the deadline.",
+    },
+    {
+      id: 2,
+      title: "Deadline Breach",
+      channel: "SMS",
+      status: stage > 2 ? "completed" : stage === 2 ? "active" : "pending",
+      scheduledFor: formatEventTime(eventMap.get("sms_sent")?.at),
+      note: "Missed workout acknowledged and pressure increased.",
+    },
+    {
+      id: 3,
+      title: "Coach Follow-Up",
+      channel: "In-app",
+      status: stage > 3 ? "completed" : stage === 3 ? "active" : "pending",
+      scheduledFor: formatEventTime(eventMap.get("call_placed")?.at),
+      note: "Recovery action becomes the main path back to compliance.",
+    },
+    {
+      id: 4,
+      title: "Voice Pressure",
+      channel: "Voice preview / call",
+      status: stage > 4 ? "completed" : stage === 4 ? "active" : "pending",
+      scheduledFor: "Queued by escalation stage",
+      note: "Voice path exists in the backend and can be enabled when desired.",
+    },
+    {
+      id: 5,
+      title: "Repeat Follow-Up",
+      channel: "SMS + in-app",
+      status: stage === 5 ? "active" : "pending",
+      scheduledFor: "After no response",
+      note: "Continues until the user resolves or snoozes the debt.",
+    },
+  ];
+}
+
+function formatEventTime(value?: string) {
+  if (!value) {
+    return "Not sent yet";
+  }
+
+  return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function getTrainingPlanPreview(
+  goalType: GoalType | "Seeded Demo",
+): TrainingPlanPreviewItem[] {
+  switch (goalType) {
+    case "Half Marathon":
+      return [
+        {
+          day: "Monday",
+          title: "Tempo progression run",
+          detail: "4 miles with a negative split and a mobility reset after.",
+          intent: "Build race pace control without burning the whole week.",
+        },
+        {
+          day: "Wednesday",
+          title: "Strength and injury shield",
+          detail: "Lower-body lift, calf raises, and single-leg knee stability work.",
+          intent: "Keep durability high so the running plan survives real life.",
+        },
+        {
+          day: "Saturday",
+          title: "Long run checkpoint",
+          detail: "6-8 miles, conversational pace, with a nutrition check-in.",
+          intent: "Increase endurance and prove schedule discipline.",
+        },
+      ];
+    case "Weight Loss":
+      return [
+        {
+          day: "Monday",
+          title: "Incline walk plus protein check",
+          detail: "35-minute walk followed by breakfast accountability.",
+          intent: "Create repeatable calorie burn without huge recovery debt.",
+        },
+        {
+          day: "Thursday",
+          title: "Strength circuit",
+          detail: "Full-body resistance session with a short finishers block.",
+          intent: "Preserve muscle while building consistency.",
+        },
+        {
+          day: "Sunday",
+          title: "Weekly reset",
+          detail: "Meal prep, weigh-in, and plan review before the next week starts.",
+          intent: "Turn progress into a system instead of a mood.",
+        },
+      ];
+    case "Strength Block":
+      return [
+        {
+          day: "Tuesday",
+          title: "Heavy lower-body day",
+          detail: "Squat focus with posterior-chain accessories and recovery notes.",
+          intent: "Drive overload while managing fatigue.",
+        },
+        {
+          day: "Thursday",
+          title: "Upper-body volume",
+          detail: "Press, pull, and carry work with exact rest windows.",
+          intent: "Build work capacity and track effort honestly.",
+        },
+        {
+          day: "Saturday",
+          title: "Conditioning finisher",
+          detail: "Sled or interval work tied to the week's compliance score.",
+          intent: "Keep discipline high even outside the main lifts.",
+        },
+      ];
+    case "Daily Discipline":
+      return [
+        {
+          day: "Daily",
+          title: "Wake-and-move block",
+          detail: "No snooze, hydrate, sunlight, and a 20-minute walk.",
+          intent: "Create identity proof before the day can drift.",
+        },
+        {
+          day: "Midday",
+          title: "Check-in prompt",
+          detail: "One quick progress note and zero excuse language.",
+          intent: "Force awareness before momentum disappears.",
+        },
+        {
+          day: "Night",
+          title: "Reset sequence",
+          detail: "Tomorrow plan, gear staging, and bedtime cutoff.",
+          intent: "Make the next morning easier to win.",
+        },
+      ];
+    case "Custom Mission":
+      return [
+        {
+          day: "Block 1",
+          title: "Primary mission session",
+          detail: "Highest-priority effort scheduled in your freshest window.",
+          intent: "Attach serious work to your actual calendar, not wishful thinking.",
+        },
+        {
+          day: "Block 2",
+          title: "Recovery or support task",
+          detail: "Mobility, admin, or lower-intensity work that keeps the chain intact.",
+          intent: "Reduce the chance that one miss collapses the whole plan.",
+        },
+        {
+          day: "Checkpoint",
+          title: "Weekly review",
+          detail: "Score compliance, review misses, and update the next target.",
+          intent: "Turn the mission into a closed feedback loop.",
+        },
+      ];
+    case "Seeded Demo":
+      return [
+        {
+          day: "Overdue now",
+          title: "Punishment run",
+          detail: "20-minute recovery run tied to missed-workout debt.",
+          intent: "Demonstrate the escalation and recovery loop live.",
+        },
+        {
+          day: "Tomorrow",
+          title: "Commitment reset",
+          detail: "Next scheduled run appears immediately after recovery acceptance.",
+          intent: "Show that the app restructures the plan instead of stopping.",
+        },
+        {
+          day: "This week",
+          title: "Accountability cadence",
+          detail: "Messages, escalation timeline, and optional voice pressure are visible.",
+          intent: "Make the overall product experience obvious before the full build exists.",
+        },
+      ];
+  }
 }

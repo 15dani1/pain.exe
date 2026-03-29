@@ -1,6 +1,6 @@
 # Backend Implementation Progress
 
-Last updated: 2026-03-28
+Last updated: 2026-03-29
 
 ## Core Hackathon Scope (Rahul)
 
@@ -25,6 +25,9 @@ Last updated: 2026-03-28
 - [x] `POST /api/integrations/garmin/sync` for Garmin activity ingestion and plan matching
 - [x] Garmin sync writes wearable evaluation state into dashboard data
 - [x] No-match Garmin sync applies a strike and escalates coach feedback
+- [x] `POST /api/call/start` Twilio outbound call trigger with in-app fallback mode
+- [x] Twilio webhook endpoints: `/api/twilio/voice`, `/api/twilio/media-stream`, `/api/twilio/status`
+- [x] `call_sessions` persistence with transcript and generated call audio clips
 - [x] `POST /api/demo/reset`
 - [x] `GET /api/demo/state`
 - [x] Request size + per-endpoint rate limits (`/api/chat`, `/api/voice/preview`)

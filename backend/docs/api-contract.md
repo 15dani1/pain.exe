@@ -175,6 +175,57 @@ Response:
 }
 ```
 
+## POST /api/call/start
+Request:
+```json
+{ "userId": "<optional-id>", "phoneNumber": "+13055550142", "includeGreetingAudio": true }
+```
+Response (Twilio configured):
+```json
+{
+  "ok": true,
+  "sessionId": "<id>",
+  "userId": "<id>",
+  "provider": "twilio",
+  "status": "queued",
+  "callSid": "CAxxxxxxxx",
+  "to": "+13055550142",
+  "from": "+1xxxxxxxxxx",
+  "stage": 3,
+  "debtCount": 2
+}
+```
+Response (fallback if Twilio is not configured or call create fails):
+```json
+{
+  "ok": true,
+  "sessionId": "<id>",
+  "userId": "<id>",
+  "provider": "fallback_in_app",
+  "status": "fallback_in_app",
+  "note": "Twilio not configured. In-app fallback message posted to escalation feed."
+}
+```
+
+## POST /api/twilio/voice
+Twilio voice webhook for initial call connection. Returns TwiML and starts a gather/reply loop.
+
+## POST /api/twilio/media-stream
+Twilio speech gather webhook for conversational turns.
+
+Behavior:
+- Reads `SpeechResult` from Twilio
+- Stores transcript in Mongo `call_sessions`
+- Generates a coach reply (OpenAI if configured, local fallback otherwise)
+- Returns TwiML with next prompt and optional ElevenLabs audio playback clip
+
+## POST /api/twilio/status
+Twilio call status callback (`initiated`, `ringing`, `in-progress`, `completed`, etc).
+Persists status transitions and end-time in `call_sessions`.
+
+## GET /api/call/session/:sessionId/audio/:clipId
+Returns generated coach audio clip (`audio/mpeg`) for Twilio `<Play>` in active call sessions.
+
 ## POST /api/integrations/garmin/sync
 Request:
 ```json

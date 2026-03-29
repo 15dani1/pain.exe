@@ -84,14 +84,14 @@ Garmin is now the chosen first wearable path. The broader wearable platform is s
 - [ ] Next backend alignment: add optional migration path for non-demo existing users to populate missing onboarding schema fields
 
 ### Next Work Item: Twilio + ElevenLabs Call Loop
-- [ ] Add env/config for telephony and voice providers (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `TWILIO_WEBHOOK_BASE_URL`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`)
-- [ ] Add `POST /api/call/start` endpoint to initiate outbound call to user phone number
-- [ ] Add Twilio webhook endpoint for call handling (`/api/twilio/voice`) and return TwiML for connect + stream
-- [ ] Add media-stream bridge endpoint (`/api/twilio/media-stream`) to support two-way conversational audio path
-- [ ] Add conversation session persistence in Mongo (`call_sessions` collection: userId, callSid, stage, transcript, start/end times, status)
-- [ ] Add fallback flow if provider fails (send in-app coach message + escalation event instead of call)
-- [ ] Add demo script path to trigger call stage from command center (`stage 4`)
-- [ ] Document legal/safety requirement: only use voice IDs you are authorized to use
+- [x] Add env/config for telephony and voice providers (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `TWILIO_WEBHOOK_BASE_URL`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`)
+- [x] Add `POST /api/call/start` endpoint to initiate outbound call to user phone number
+- [x] Add Twilio webhook endpoint for call handling (`/api/twilio/voice`) and return TwiML for connect + stream
+- [x] Add media-stream bridge endpoint (`/api/twilio/media-stream`) to support two-way conversational audio path
+- [x] Add conversation session persistence in Mongo (`call_sessions` collection: userId, callSid, stage, transcript, start/end times, status)
+- [x] Add fallback flow if provider fails (send in-app coach message + escalation event instead of call)
+- [x] Add demo script path to trigger call stage from command center (`stage 4`)
+- [x] Document legal/safety requirement: only use voice IDs you are authorized to use
 
 ---
 

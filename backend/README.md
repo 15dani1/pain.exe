@@ -13,6 +13,11 @@ Standalone API service for hackathon demo flow.
 - `POST /api/voice/session/start`
 - `POST /api/voice/session/:sessionId/turn`
 - `POST /api/voice/session/:sessionId/end`
+- `POST /api/call/start`
+- `POST /api/twilio/voice`
+- `POST /api/twilio/media-stream`
+- `POST /api/twilio/status`
+- `GET /api/call/session/:sessionId/audio/:clipId`
 - `GET /api/demo/state`
 - `POST /api/demo/reset`
 
@@ -25,17 +30,29 @@ Standalone API service for hackathon demo flow.
    - `ELEVENLABS_API_KEY`
    - `ELEVENLABS_VOICE_ID`
    - optional: `ELEVENLABS_MODEL_ID`
-4. Install and run:
+4. Add Twilio config if you want real outbound phone calls:
+   - `TWILIO_ACCOUNT_SID`
+   - `TWILIO_AUTH_TOKEN`
+   - `TWILIO_FROM_NUMBER`
+   - `TWILIO_WEBHOOK_BASE_URL` (public base URL Twilio can reach, for example ngrok tunnel)
+   If Twilio config is missing, `POST /api/call/start` falls back to an in-app coach escalation message.
+5. Install and run:
    - `npm install`
    - `npm run seed`
    - `npm run dev`
    - optional schema alignment for existing demo docs: `npm run backfill:frontend-schema`
-5. Run smoke test (optional):
+6. Run smoke test (optional):
    - `npm run smoke:test`
-6. Run full demo readiness check:
+7. Run full demo readiness check:
    - `npm run demo:ready`
 
 `/api/chat` currently works without any LLM key and falls back to a deterministic persona reply, so your demo is not blocked if you skip OpenAI.
+
+## Voice Safety Requirement
+
+- Only use ElevenLabs voice IDs that you are authorized to use.
+- Do not clone or impersonate a real person without explicit permission.
+- For public demos, prefer licensed/synthetic voices to avoid rights and policy issues.
 
 ## Frontend integration
 

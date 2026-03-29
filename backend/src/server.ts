@@ -9,6 +9,7 @@ import type { DashboardResponse, EscalationEvent, EscalationStage, MessageRole, 
 
 const app = express();
 app.use(express.json({ limit: "200kb" }));
+app.use(express.urlencoded({ extended: false }));
 app.use(cors({ origin: config.frontendOrigin }));
 
 const MAX_CHAT_MESSAGE_LENGTH = 1200;
@@ -31,12 +32,37 @@ type VoiceTurn = {
   text: string;
   at: string;
 };
+type CallSessionStatus =
+  | "queued"
+  | "initiated"
+  | "ringing"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "busy"
+  | "no_answer"
+  | "canceled"
+  | "fallback_in_app";
+type CallTranscriptTurn = {
+  role: "user" | "coach" | "system";
+  text: string;
+  at: string;
+  source?: "twilio_gather" | "coach_reply" | "system";
+};
+type CallAudioClip = {
+  id: string;
+  mimeType: "audio/mpeg";
+  audioBase64: string;
+  text: string;
+  createdAt: string;
+};
 type ErrorCode =
   | "RATE_LIMITED"
   | "VALIDATION_ERROR"
   | "NOT_FOUND"
   | "DB_ERROR"
   | "VOICE_UNAVAILABLE"
+  | "TELEPHONY_UNAVAILABLE"
   | "INTERNAL_ERROR";
 
 function sendError(res: Response, status: number, code: ErrorCode, error: string, detail?: string) {
@@ -80,6 +106,37 @@ function toIso(date: Date) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function escapeXml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function xmlResponse(res: Response, xml: string) {
+  res.setHeader("Content-Type", "text/xml; charset=utf-8");
+  return res.status(200).send(xml);
+}
+
+function twilioConfigured() {
+  return Boolean(
+    config.twilioAccountSid &&
+      config.twilioAuthToken &&
+      config.twilioFromNumber &&
+      config.twilioWebhookBaseUrl
+  );
+}
+
+function normalizeWebhookBaseUrl(url: string) {
+  return url.replace(/\/+$/, "");
+}
+
+function createCallAudioClipId() {
+  return new ObjectId().toString();
 }
 
 function boundedStage(stage: number): EscalationStage {
@@ -256,6 +313,85 @@ function buildCoachGreeting(args: { name: string; stage: EscalationStage; debtCo
   return `This is coach mode. ${args.name}, stage ${args.stage}, debt ${args.debtCount}. Today's assignment is ${args.todayTaskTitle}. Speak your update now.`;
 }
 
+function buildCallCoachGreeting(args: {
+  name: string;
+  stage: EscalationStage;
+  debtCount: number;
+  todayTaskTitle: string;
+}) {
+  return `Coach check-in. ${args.name}, this is stage ${args.stage} and debt is ${args.debtCount}. Your assignment is ${args.todayTaskTitle}. Tell me exactly what happened today.`;
+}
+
+function buildTwimlGatherLoop(args: {
+  sessionId: string;
+  preface: string;
+  prompt: string;
+  playClipId?: string;
+}) {
+  const base = normalizeWebhookBaseUrl(config.twilioWebhookBaseUrl);
+  const actionUrl = `${base}/api/twilio/media-stream?sessionId=${encodeURIComponent(args.sessionId)}`;
+  const statusUrl = `${base}/api/twilio/voice?sessionId=${encodeURIComponent(args.sessionId)}`;
+  const lines = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    "<Response>",
+    `  <Say>${escapeXml(args.preface)}</Say>`
+  ];
+
+  if (args.playClipId) {
+    lines.push(
+      `  <Play>${escapeXml(
+        `${base}/api/call/session/${encodeURIComponent(args.sessionId)}/audio/${encodeURIComponent(args.playClipId)}`
+      )}</Play>`
+    );
+  }
+
+  lines.push(
+    `  <Gather input="speech" language="en-US" speechTimeout="auto" action="${escapeXml(
+      actionUrl
+    )}" method="POST">`,
+    `    <Say>${escapeXml(args.prompt)}</Say>`,
+    "  </Gather>",
+    `  <Redirect method="POST">${escapeXml(statusUrl)}</Redirect>`,
+    "</Response>"
+  );
+
+  return lines.join("\n");
+}
+
+async function appendFallbackCoachMessage(args: {
+  userId: ObjectId;
+  stage: EscalationStage;
+  detail: string;
+}) {
+  const db = await withMongoRetry(async () => getDb());
+  const at = nowIso();
+  await db.collection("escalations").updateOne(
+    { userId: args.userId },
+    {
+      $set: { updatedAt: new Date(), lastActionAt: new Date() },
+      $push: {
+        recentMessages: {
+          $each: [
+            {
+              role: "coach",
+              content:
+                "Call provider was unavailable. Switching to in-app accountability loop now. Reply in chat and log your next completed workout today.",
+              sentAt: at
+            }
+          ],
+          $slice: -20
+        },
+        events: {
+          type: "call_fallback",
+          label: "Call fallback: in-app coach message",
+          at,
+          detail: args.detail
+        }
+      }
+    } as any
+  );
+}
+
 async function maybeOpenAIReply(userMessage: string, context: { stage: EscalationStage; debtCount: number }) {
   if (!config.openAiApiKey) {
     return localCoachReply(userMessage, context.stage, context.debtCount);
@@ -382,6 +518,78 @@ async function generateVoiceBase64(text: string) {
 
   const audioBuffer = Buffer.from(await response.arrayBuffer());
   return audioBuffer.toString("base64");
+}
+
+async function createCallAudioClip(args: { sessionId: ObjectId; text: string }) {
+  const clipId = createCallAudioClipId();
+  const audioBase64 = await generateVoiceBase64(args.text);
+  const clip: CallAudioClip = {
+    id: clipId,
+    mimeType: "audio/mpeg",
+    audioBase64,
+    text: args.text,
+    createdAt: nowIso()
+  };
+
+  const db = await withMongoRetry(async () => getDb());
+  await db.collection("call_sessions").updateOne(
+    { _id: args.sessionId },
+    {
+      $push: {
+        audioClips: clip
+      },
+      $set: { updatedAt: new Date() }
+    } as any
+  );
+
+  return clip;
+}
+
+async function startTwilioOutboundCall(args: {
+  toNumber: string;
+  sessionId: string;
+}) {
+  const sid = config.twilioAccountSid;
+  const token = config.twilioAuthToken;
+  const from = config.twilioFromNumber;
+  const webhookBase = normalizeWebhookBaseUrl(config.twilioWebhookBaseUrl);
+
+  const voiceUrl = `${webhookBase}/api/twilio/voice?sessionId=${encodeURIComponent(args.sessionId)}`;
+  const statusCallbackUrl = `${webhookBase}/api/twilio/status?sessionId=${encodeURIComponent(args.sessionId)}`;
+  const payload = new URLSearchParams({
+    To: args.toNumber,
+    From: from,
+    Url: voiceUrl,
+    Method: "POST",
+    StatusCallback: statusCallbackUrl,
+    StatusCallbackMethod: "POST",
+    StatusCallbackEvent: "initiated ringing answered completed"
+  });
+
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Calls.json`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`,
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: payload.toString()
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Twilio call create failed (${response.status}): ${text}`);
+  }
+
+  const parsed = JSON.parse(text) as { sid?: string; status?: string; to?: string; from?: string };
+  if (!parsed.sid) {
+    throw new Error("Twilio response missing call sid");
+  }
+  return {
+    callSid: parsed.sid,
+    status: String(parsed.status ?? "queued"),
+    to: String(parsed.to ?? args.toNumber),
+    from: String(parsed.from ?? from)
+  };
 }
 
 async function applyTaskStatusTransition(args: {
@@ -1129,6 +1337,428 @@ app.post("/api/recovery", async (req, res) => {
     return res.json({ ok: true, action, debtCount: nextDebt });
   } catch (error) {
     return sendError(res, 500, "DB_ERROR", "Failed to apply recovery", String(error));
+  }
+});
+
+app.post("/api/call/start", rateLimit(10, 60_000), async (req, res) => {
+  try {
+    const { userId, phoneNumber, includeGreetingAudio = true } = req.body as {
+      userId?: string;
+      phoneNumber?: string;
+      includeGreetingAudio?: boolean;
+    };
+
+    const oid = await resolveVoiceSessionUserId(userId);
+    if (!oid) {
+      return sendError(res, 404, "NOT_FOUND", "No valid user found for call start");
+    }
+
+    const db = await withMongoRetry(async () => getDb());
+    const [user, plan, escalation] = await withMongoRetry(async () =>
+      Promise.all([
+        db.collection("users").findOne({ _id: oid }),
+        db.collection("plans").findOne({ userId: oid }),
+        db.collection("escalations").findOne({ userId: oid })
+      ])
+    );
+    if (!user || !plan || !escalation) {
+      return sendError(res, 404, "NOT_FOUND", "Call context not found");
+    }
+
+    const destination = String(phoneNumber ?? user.phoneNumber ?? plan.phoneNumber ?? "").trim();
+    if (!destination) {
+      return sendError(
+        res,
+        400,
+        "VALIDATION_ERROR",
+        "No destination phone number found. Pass phoneNumber or store one in onboarding."
+      );
+    }
+
+    const stage = boundedStage(Number(escalation.stage ?? 1));
+    const debtCount = Number(plan.debtCount ?? 0);
+    const greetingText = buildCallCoachGreeting({
+      name: String(user.name ?? "athlete"),
+      stage,
+      debtCount,
+      todayTaskTitle: String(plan.todayTask?.title ?? "today's workout")
+    });
+
+    const startedAt = new Date();
+    const insert = await db.collection("call_sessions").insertOne({
+      userId: oid,
+      stageAtStart: stage,
+      debtAtStart: debtCount,
+      todayTaskTitle: String(plan.todayTask?.title ?? ""),
+      phoneNumber: destination,
+      provider: "twilio",
+      status: "initiated" as CallSessionStatus,
+      callSid: null,
+      transcript: [
+        {
+          role: "system",
+          text: "Call session created",
+          at: startedAt.toISOString(),
+          source: "system"
+        } satisfies CallTranscriptTurn
+      ],
+      audioClips: [],
+      startedAt,
+      endedAt: null,
+      updatedAt: startedAt
+    });
+
+    let greetingClipId: string | null = null;
+    if (includeGreetingAudio) {
+      try {
+        const clip = await createCallAudioClip({ sessionId: insert.insertedId, text: greetingText });
+        greetingClipId = clip.id;
+      } catch {
+        greetingClipId = null;
+      }
+    }
+
+    await db.collection("call_sessions").updateOne(
+      { _id: insert.insertedId },
+      {
+        $push: {
+          transcript: {
+            role: "coach",
+            text: greetingText,
+            at: nowIso(),
+            source: "coach_reply"
+          }
+        },
+        $set: { greetingText, greetingClipId, updatedAt: new Date() }
+      } as any
+    );
+
+    if (!twilioConfigured()) {
+      await db.collection("call_sessions").updateOne(
+        { _id: insert.insertedId },
+        {
+          $set: {
+            provider: "fallback_in_app",
+            status: "fallback_in_app" as CallSessionStatus,
+            endedAt: new Date(),
+            updatedAt: new Date(),
+            endReason: "twilio_not_configured"
+          },
+          $push: {
+            transcript: {
+              role: "system",
+              text: "Twilio not configured. Falling back to in-app coach message.",
+              at: nowIso(),
+              source: "system"
+            }
+          }
+        } as any
+      );
+
+      await appendFallbackCoachMessage({
+        userId: oid,
+        stage,
+        detail: "Twilio credentials or webhook base URL missing"
+      });
+
+      return res.status(202).json({
+        ok: true,
+        sessionId: insert.insertedId.toString(),
+        userId: oid.toString(),
+        provider: "fallback_in_app",
+        status: "fallback_in_app",
+        stage,
+        debtCount,
+        note: "Twilio not configured. In-app fallback message posted to escalation feed."
+      });
+    }
+
+    try {
+      const call = await startTwilioOutboundCall({
+        toNumber: destination,
+        sessionId: insert.insertedId.toString()
+      });
+
+      await db.collection("call_sessions").updateOne(
+        { _id: insert.insertedId },
+        {
+          $set: {
+            callSid: call.callSid,
+            status: call.status as CallSessionStatus,
+            provider: "twilio",
+            updatedAt: new Date()
+          }
+        }
+      );
+
+      await db.collection("escalations").updateOne(
+        { userId: oid },
+        {
+          $set: { updatedAt: new Date(), lastActionAt: new Date() },
+          $push: {
+            events: {
+              type: "call_placed",
+              label: "Twilio call placed",
+              at: nowIso(),
+              detail: `Call SID ${call.callSid}`
+            }
+          }
+        } as any
+      );
+
+      return res.status(201).json({
+        ok: true,
+        sessionId: insert.insertedId.toString(),
+        userId: oid.toString(),
+        provider: "twilio",
+        status: call.status,
+        callSid: call.callSid,
+        to: call.to,
+        from: call.from,
+        stage,
+        debtCount
+      });
+    } catch (error) {
+      await db.collection("call_sessions").updateOne(
+        { _id: insert.insertedId },
+        {
+          $set: {
+            provider: "fallback_in_app",
+            status: "fallback_in_app" as CallSessionStatus,
+            endedAt: new Date(),
+            updatedAt: new Date(),
+            endReason: "twilio_call_create_failed",
+            errorDetail: String(error)
+          },
+          $push: {
+            transcript: {
+              role: "system",
+              text: "Twilio call create failed. Falling back to in-app coach message.",
+              at: nowIso(),
+              source: "system"
+            }
+          }
+        } as any
+      );
+
+      await appendFallbackCoachMessage({
+        userId: oid,
+        stage,
+        detail: String(error)
+      });
+
+      return res.status(202).json({
+        ok: true,
+        sessionId: insert.insertedId.toString(),
+        userId: oid.toString(),
+        provider: "fallback_in_app",
+        status: "fallback_in_app",
+        stage,
+        debtCount,
+        note: "Twilio call failed to start. In-app fallback message posted to escalation feed."
+      });
+    }
+  } catch (error) {
+    return sendError(res, 500, "DB_ERROR", "Failed to start call session", String(error));
+  }
+});
+
+app.post("/api/twilio/voice", async (req, res) => {
+  try {
+    const sessionId = String(req.query.sessionId ?? req.body.sessionId ?? "").trim();
+    if (!ObjectId.isValid(sessionId)) {
+      return xmlResponse(
+        res,
+        '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Invalid session.</Say><Hangup/></Response>'
+      );
+    }
+
+    const db = await withMongoRetry(async () => getDb());
+    const sid = new ObjectId(sessionId);
+    const session = await withMongoRetry(async () => db.collection("call_sessions").findOne({ _id: sid }));
+    if (!session) {
+      return xmlResponse(
+        res,
+        '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Session not found.</Say><Hangup/></Response>'
+      );
+    }
+
+    const callSid = String(req.body.CallSid ?? "").trim();
+    if (callSid) {
+      await db.collection("call_sessions").updateOne(
+        { _id: sid },
+        {
+          $set: {
+            callSid,
+            status: "in_progress" as CallSessionStatus,
+            updatedAt: new Date()
+          }
+        }
+      );
+    }
+
+    const greetingClipId = String(session.greetingClipId ?? "").trim();
+    const greetingText = String(session.greetingText ?? "Coach line connected.");
+    const twiml = buildTwimlGatherLoop({
+      sessionId,
+      preface: greetingText,
+      prompt: "Give me your update in one sentence. Then I will respond.",
+      playClipId: greetingClipId || undefined
+    });
+    return xmlResponse(res, twiml);
+  } catch {
+    return xmlResponse(
+      res,
+      '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Call flow error. Ending call.</Say><Hangup/></Response>'
+    );
+  }
+});
+
+app.post("/api/twilio/media-stream", async (req, res) => {
+  try {
+    const sessionId = String(req.query.sessionId ?? req.body.sessionId ?? "").trim();
+    const speechResult = String(req.body.SpeechResult ?? "").trim();
+    if (!ObjectId.isValid(sessionId)) {
+      return xmlResponse(
+        res,
+        '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Invalid session.</Say><Hangup/></Response>'
+      );
+    }
+
+    const db = await withMongoRetry(async () => getDb());
+    const sid = new ObjectId(sessionId);
+    const session = await withMongoRetry(async () => db.collection("call_sessions").findOne({ _id: sid }));
+    if (!session) {
+      return xmlResponse(
+        res,
+        '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Session not found.</Say><Hangup/></Response>'
+      );
+    }
+
+    const userText = speechResult || "No speech detected.";
+    const stage = boundedStage(Number(session.stageAtStart ?? 1));
+    const debtCount = Number(session.debtAtStart ?? 0);
+    const coachReply = await maybeOpenAIReply(userText, { stage, debtCount });
+
+    await db.collection("call_sessions").updateOne(
+      { _id: sid },
+      {
+        $push: {
+          transcript: {
+            $each: [
+              {
+                role: "user",
+                text: userText,
+                at: nowIso(),
+                source: "twilio_gather"
+              } satisfies CallTranscriptTurn,
+              {
+                role: "coach",
+                text: coachReply,
+                at: nowIso(),
+                source: "coach_reply"
+              } satisfies CallTranscriptTurn
+            ]
+          }
+        },
+        $set: { updatedAt: new Date(), status: "in_progress" as CallSessionStatus }
+      } as any
+    );
+
+    let clipId: string | undefined;
+    try {
+      const clip = await createCallAudioClip({ sessionId: sid, text: coachReply });
+      clipId = clip.id;
+    } catch {
+      clipId = undefined;
+    }
+
+    const twiml = buildTwimlGatherLoop({
+      sessionId,
+      preface: "Copy.",
+      prompt: coachReply,
+      playClipId: clipId
+    });
+    return xmlResponse(res, twiml);
+  } catch {
+    return xmlResponse(
+      res,
+      '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Unable to continue call loop right now.</Say><Hangup/></Response>'
+    );
+  }
+});
+
+app.post("/api/twilio/status", async (req, res) => {
+  try {
+    const sessionId = String(req.query.sessionId ?? req.body.sessionId ?? "").trim();
+    if (!ObjectId.isValid(sessionId)) {
+      return res.status(200).json({ ok: true });
+    }
+    const sid = new ObjectId(sessionId);
+    const callStatus = String(req.body.CallStatus ?? "").trim().toLowerCase();
+    const callSid = String(req.body.CallSid ?? "").trim();
+    const doneStatuses = new Set(["completed", "busy", "failed", "no-answer", "canceled"]);
+    const normalizedStatus =
+      callStatus === "no-answer" ? "no_answer" : (callStatus as CallSessionStatus);
+
+    const update: Record<string, unknown> = {
+      $set: {
+        updatedAt: new Date(),
+        status: normalizedStatus || "in_progress",
+        ...(callSid ? { callSid } : {})
+      }
+    };
+
+    if (doneStatuses.has(callStatus)) {
+      update.$set = {
+        ...(update.$set as Record<string, unknown>),
+        endedAt: new Date()
+      };
+      update.$push = {
+        transcript: {
+          role: "system",
+          text: `Twilio status update: ${callStatus}`,
+          at: nowIso(),
+          source: "system"
+        } satisfies CallTranscriptTurn
+      };
+    }
+
+    const db = await withMongoRetry(async () => getDb());
+    await db.collection("call_sessions").updateOne({ _id: sid }, update as any);
+    return res.status(200).json({ ok: true });
+  } catch {
+    return res.status(200).json({ ok: true });
+  }
+});
+
+app.get("/api/call/session/:sessionId/audio/:clipId", async (req, res) => {
+  try {
+    const sessionId = String(req.params.sessionId ?? "").trim();
+    const clipId = String(req.params.clipId ?? "").trim();
+    if (!ObjectId.isValid(sessionId) || !clipId) {
+      return sendError(res, 400, "VALIDATION_ERROR", "Valid sessionId and clipId are required");
+    }
+
+    const db = await withMongoRetry(async () => getDb());
+    const session = await withMongoRetry(async () =>
+      db.collection("call_sessions").findOne(
+        { _id: new ObjectId(sessionId) },
+        { projection: { audioClips: 1 } }
+      )
+    );
+    const clips = Array.isArray(session?.audioClips) ? session.audioClips : [];
+    const clip = clips.find((item) => String(item.id ?? "") === clipId);
+    if (!clip?.audioBase64) {
+      return sendError(res, 404, "NOT_FOUND", "Audio clip not found");
+    }
+
+    const audio = Buffer.from(String(clip.audioBase64), "base64");
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).send(audio);
+  } catch (error) {
+    return sendError(res, 500, "DB_ERROR", "Failed to load call audio clip", String(error));
   }
 });
 

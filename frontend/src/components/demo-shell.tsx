@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { OnboardingWizard } from "@/components/onboarding-wizard";
 import { WearableInsightsPanel } from "@/components/wearable-insights";
 import {
@@ -60,6 +60,54 @@ type PlanLibraryResponse = {
   plans: PlanRecord[];
 };
 
+type CallStartResponse = {
+  ok: true;
+  sessionId: string;
+  userId: string;
+  provider: "twilio" | "fallback_in_app";
+  status: string;
+  callSid?: string;
+  to?: string;
+  from?: string;
+  stage?: number;
+  debtCount?: number;
+  note?: string;
+};
+
+type VoiceSessionStartResponse = {
+  ok: true;
+  sessionId: string;
+  userId: string;
+  stage: number;
+  debtCount: number;
+  greeting: {
+    text: string;
+    voice: {
+      mimeType: string;
+      audioBase64: string;
+    } | null;
+  };
+};
+
+type VoiceSessionTurnResponse = {
+  ok: true;
+  coachReply: string;
+  voice: {
+    mimeType: string;
+    audioBase64: string;
+  } | null;
+  voiceError?: {
+    code?: string;
+    error?: string;
+    detail?: string;
+  };
+};
+
+type CallConversationTurn = {
+  id: string;
+  role: "coach" | "user" | "system";
+  text: string;
+};
 type DemoShellProps = {
   page: PageKind;
 };
@@ -78,6 +126,13 @@ export function DemoShell({ page }: DemoShellProps) {
   const [callOverlayOpen, setCallOverlayOpen] = useState(false);
   const [callPhase, setCallPhase] = useState<"dialing" | "connected">("dialing");
   const [callElapsedSeconds, setCallElapsedSeconds] = useState(0);
+  const [callStartPending, setCallStartPending] = useState(false);
+  const [callSessionNote, setCallSessionNote] = useState<string | null>(null);
+  const [callProviderLabel, setCallProviderLabel] = useState<string>("Demo call");
+  const [callVoiceSessionId, setCallVoiceSessionId] = useState<string | null>(null);
+  const [callConversation, setCallConversation] = useState<CallConversationTurn[]>([]);
+  const [callTurnPending, setCallTurnPending] = useState(false);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const selectedPlan = useMemo(() => {
     if (plans.length === 0) {
@@ -146,6 +201,10 @@ export function DemoShell({ page }: DemoShellProps) {
     if (!callOverlayOpen) {
       setCallPhase("dialing");
       setCallElapsedSeconds(0);
+      setCallSessionNote(null);
+      setCallProviderLabel("Demo call");
+      setCallConversation([]);
+      setCallTurnPending(false);
       return;
     }
 
@@ -167,6 +226,133 @@ export function DemoShell({ page }: DemoShellProps) {
 
     return () => window.clearInterval(interval);
   }, [callOverlayOpen, callPhase]);
+
+  async function playReturnedVoice(voice: { mimeType: string; audioBase64: string } | null) {
+    if (!voice?.audioBase64) {
+      return;
+    }
+
+    try {
+      const src = `data:${voice.mimeType || "audio/mpeg"};base64,${voice.audioBase64}`;
+      if (!audioPlayerRef.current) {
+        audioPlayerRef.current = new Audio();
+      }
+      const player = audioPlayerRef.current;
+      player.src = src;
+      player.currentTime = 0;
+      await player.play();
+    } catch {
+      // Browser autoplay can fail if no recent user gesture; transcript still updates.
+    }
+  }
+
+  async function startVoiceSessionForCall(userId: string) {
+    const response = await fetch("/api/voice/session/start", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userId,
+        includeGreetingAudio: true,
+      }),
+    });
+    const data = (await response.json()) as VoiceSessionStartResponse | ApiError;
+    if (!response.ok || !("ok" in data)) {
+      throw new Error(getApiErrorMessage(data, "Failed to start voice session"));
+    }
+
+    setCallVoiceSessionId(data.sessionId);
+    setCallConversation((prev) => [
+      ...prev,
+      {
+        id: `coach-greeting-${Date.now()}`,
+        role: "coach",
+        text: data.greeting.text,
+      },
+    ]);
+    await playReturnedVoice(data.greeting.voice);
+  }
+
+  async function submitCallTurn(userText: string) {
+    const trimmed = userText.trim();
+    if (!trimmed || !callVoiceSessionId || callTurnPending) {
+      return;
+    }
+
+    setCallTurnPending(true);
+    setCallConversation((prev) => [
+      ...prev,
+      {
+        id: `user-${Date.now()}`,
+        role: "user",
+        text: trimmed,
+      },
+    ]);
+
+    try {
+      const response = await fetch(`/api/voice/session/${encodeURIComponent(callVoiceSessionId)}/turn`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userText: trimmed,
+          includeVoice: true,
+        }),
+      });
+      const data = (await response.json()) as VoiceSessionTurnResponse | ApiError;
+      if (!response.ok || !("ok" in data)) {
+        throw new Error(getApiErrorMessage(data, "Failed to send voice turn"));
+      }
+
+      setCallConversation((prev) => [
+        ...prev,
+        {
+          id: `coach-${Date.now()}`,
+          role: "coach",
+          text: data.coachReply,
+        },
+      ]);
+
+      if (data.voiceError?.error) {
+        setCallSessionNote(`Voice degraded: ${data.voiceError.error}`);
+      }
+      await playReturnedVoice(data.voice);
+    } catch (caughtError) {
+      setCallConversation((prev) => [
+        ...prev,
+        {
+          id: `system-${Date.now()}`,
+          role: "system",
+          text: `Turn failed: ${String(caughtError)}`,
+        },
+      ]);
+      setError(String(caughtError));
+    } finally {
+      setCallTurnPending(false);
+    }
+  }
+
+  async function endVoiceSession(reason: string) {
+    if (!callVoiceSessionId) {
+      return;
+    }
+
+    try {
+      await fetch(`/api/voice/session/${encodeURIComponent(callVoiceSessionId)}/end`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ reason }),
+      });
+    } catch {
+      // Best-effort cleanup.
+    } finally {
+      setCallVoiceSessionId(null);
+    }
+  }
 
   async function bootstrap() {
     setError(null);
@@ -339,13 +525,72 @@ export function DemoShell({ page }: DemoShellProps) {
     }
   }
 
-  function openCallOverlay() {
+  async function openCallOverlay() {
+    if (!activeUserId || callStartPending) {
+      return;
+    }
+
+    setCallStartPending(true);
     setCallPhase("dialing");
     setCallElapsedSeconds(0);
+    setCallSessionNote(null);
+    setCallProviderLabel("Connecting");
     setCallOverlayOpen(true);
+    setCallConversation([
+      {
+        id: `system-start-${Date.now()}`,
+        role: "system",
+        text: "Starting trainer session...",
+      },
+    ]);
+
+    try {
+      const response = await fetch("/api/call/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: activeUserId,
+          phoneNumber: selectedPlan?.phoneNumber || undefined,
+          includeGreetingAudio: true,
+        }),
+      });
+
+      const data = (await response.json()) as CallStartResponse | ApiError;
+      if (!response.ok || !("ok" in data)) {
+        throw new Error(getApiErrorMessage(data, "Failed to start call"));
+      }
+
+      if (data.provider === "fallback_in_app") {
+        setCallProviderLabel("In-app fallback");
+        setCallSessionNote(
+          data.note ??
+            "Twilio is not configured yet. Coach fallback message was posted to escalation timeline.",
+        );
+      } else {
+        setCallProviderLabel("Twilio outbound");
+        setCallSessionNote(
+          data.callSid
+            ? `Live call requested. SID ${data.callSid}.`
+            : "Live call request submitted.",
+        );
+      }
+
+      await startVoiceSessionForCall(activeUserId);
+      await loadDashboardForUser(activeUserId);
+      setError(null);
+    } catch (caughtError) {
+      setCallProviderLabel("Demo fallback");
+      setCallSessionNote("Unable to start provider call. Keeping demo overlay active.");
+      setError(String(caughtError));
+    } finally {
+      setCallStartPending(false);
+    }
   }
 
   function closeCallOverlay() {
+    void endVoiceSession("user_hangup");
     setCallOverlayOpen(false);
   }
 
@@ -423,6 +668,7 @@ export function DemoShell({ page }: DemoShellProps) {
                 onDone={submitCheckin}
                 onRecovery={submitRecovery}
                 onCallTrainer={openCallOverlay}
+                callStartPending={callStartPending}
               />
             </div>
 
@@ -452,6 +698,12 @@ export function DemoShell({ page }: DemoShellProps) {
           selectedPlan={selectedPlan}
           phase={callPhase}
           elapsedSeconds={callElapsedSeconds}
+          providerLabel={callProviderLabel}
+          sessionNote={callSessionNote}
+          pending={callStartPending}
+          transcript={callConversation}
+          turnPending={callTurnPending}
+          onSendTurn={submitCallTurn}
           onClose={closeCallOverlay}
         />
       ) : null}
@@ -632,6 +884,7 @@ function TodayMissionPanel({
   onDone,
   onRecovery,
   onCallTrainer,
+  callStartPending,
 }: {
   dashboard: DashboardPayload | null;
   selectedPlan: PlanRecord | null;
@@ -640,7 +893,8 @@ function TodayMissionPanel({
   actionPending: string | null;
   onDone: (status: "done" | "missed") => Promise<void>;
   onRecovery: (action: "accept" | "snooze") => Promise<void>;
-  onCallTrainer: () => void;
+  onCallTrainer: () => Promise<void>;
+  callStartPending: boolean;
 }) {
   const taskStatus = dashboard?.todayTask.status ?? "pending";
   const weekStrip = useMemo(
@@ -744,10 +998,11 @@ function TodayMissionPanel({
             </button>
             <button
               type="button"
-              onClick={onCallTrainer}
-              className="rounded-full border border-black/20 bg-white px-5 py-3 font-medium text-black transition hover:border-black/40 hover:bg-black hover:text-white"
+              onClick={() => void onCallTrainer()}
+              disabled={callStartPending}
+              className="rounded-full border border-black/20 bg-white px-5 py-3 font-medium text-black transition hover:border-black/40 hover:bg-black hover:text-white disabled:opacity-50"
             >
-              Call trainer
+              {callStartPending ? "Starting call..." : "Call trainer"}
             </button>
           </div>
         </div>
@@ -787,23 +1042,101 @@ function TrainerCallModal({
   selectedPlan,
   phase,
   elapsedSeconds,
+  providerLabel,
+  sessionNote,
+  pending,
+  transcript,
+  turnPending,
+  onSendTurn,
   onClose,
 }: {
   selectedPlan: PlanRecord | null;
   phase: "dialing" | "connected";
   elapsedSeconds: number;
+  providerLabel: string;
+  sessionNote: string | null;
+  pending: boolean;
+  transcript: CallConversationTurn[];
+  turnPending: boolean;
+  onSendTurn: (text: string) => Promise<void>;
   onClose: () => void;
 }) {
   const mm = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
   const ss = String(elapsedSeconds % 60).padStart(2, "0");
   const callTime = `${mm}:${ss}`;
+  const [recognizing, setRecognizing] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  const micSupported =
+    typeof window !== "undefined" &&
+    Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
+  function handleMicCapture() {
+    setMicError(null);
+    const SpeechRecognitionCtor =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      setMicError("Mic dictation is not supported in this browser (Chrome recommended).");
+      return;
+    }
+
+    try {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop?.();
+      }
+      const recognition = new SpeechRecognitionCtor();
+      recognitionRef.current = recognition;
+      recognition.lang = "en-US";
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      setRecognizing(true);
+
+      recognition.onresult = (event: any) => {
+        const transcriptText = String(event?.results?.[0]?.[0]?.transcript ?? "").trim();
+        if (transcriptText) {
+          void onSendTurn(transcriptText);
+        } else {
+          setMicError("No speech was detected. Try again and speak clearly.");
+        }
+      };
+      recognition.onerror = (event: any) => {
+        const code = String(event?.error ?? "unknown");
+        if (code === "not-allowed") {
+          setMicError("Microphone permission was denied. Allow mic access in browser settings.");
+        } else if (code === "no-speech") {
+          setMicError("No speech detected. Try again and speak closer to the mic.");
+        } else {
+          setMicError("Mic capture failed. Try again or type your message.");
+        }
+      };
+      recognition.onend = () => {
+        setRecognizing(false);
+      };
+      recognition.start();
+    } catch {
+      setRecognizing(false);
+      setMicError("Unable to start mic capture in this browser.");
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      try {
+        recognitionRef.current?.stop?.();
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null;
+    };
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm">
       <div className="relative w-full max-w-sm rounded-[2.2rem] bg-[#0e1218] p-4 text-white shadow-2xl ring-1 ring-white/10">
         <div className="mx-auto mb-4 h-1.5 w-20 rounded-full bg-white/20" />
         <div className="rounded-[1.8rem] border border-white/10 bg-gradient-to-b from-[#121824] to-[#0a0f15] p-6 text-center">
-          <p className="label text-[#8fb2ff]">Trainer line</p>
+          <p className="label text-[#8fb2ff]">{providerLabel}</p>
           <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">Coach Goggins</h3>
           <p className="mt-1 text-sm text-white/70">
             {selectedPlan?.phoneNumber ? `Calling ${selectedPlan.phoneNumber}` : "Live demo call"}
@@ -828,11 +1161,76 @@ function TrainerCallModal({
               ? "Connecting trainer line and preparing voice stream."
               : "Two-way trainer conversation is active for demo preview."}
           </p>
+          {sessionNote ? (
+            <p className="mt-3 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs leading-5 text-white/80">
+              {sessionNote}
+            </p>
+          ) : null}
+
+          <div className="mt-4 rounded-[1.2rem] border border-white/12 bg-black/20 p-3 text-left">
+            <p className="label text-white/60">Conversation</p>
+            <div className="mt-2 max-h-36 space-y-2 overflow-y-auto pr-1">
+              {transcript.length === 0 ? (
+                <p className="text-xs text-white/60">
+                  Waiting for coach greeting...
+                </p>
+              ) : (
+                transcript.map((turn) => (
+                  <div
+                    key={turn.id}
+                    className={`rounded-lg px-2.5 py-2 text-xs leading-5 ${
+                      turn.role === "coach"
+                        ? "bg-[#20314f] text-[#e7f0ff]"
+                        : turn.role === "user"
+                          ? "bg-[#2c3320] text-[#f2f7dd]"
+                          : "bg-white/10 text-white/70"
+                    }`}
+                  >
+                    <span className="mr-1 font-semibold uppercase tracking-[0.08em]">
+                      {turn.role}
+                    </span>
+                    {turn.text}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="mt-3 rounded-[1.2rem] border border-white/12 bg-black/15 p-3">
+            <p className="text-xs leading-5 text-white/70">
+              Mic-only mode enabled. Tap the button, speak your update, and the turn will send automatically.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleMicCapture}
+                disabled={recognizing || turnPending || pending}
+                className="rounded-full bg-[#5f8fff] px-4 py-2 text-xs font-semibold text-white disabled:opacity-40"
+              >
+                {!micSupported
+                  ? "Mic unavailable"
+                  : recognizing
+                    ? "Listening..."
+                    : turnPending
+                      ? "Sending..."
+                      : "Tap to talk"}
+              </button>
+            </div>
+            {!micSupported ? (
+              <p className="mt-2 text-[11px] text-white/60">
+                Mic dictation requires Web Speech API support (Chrome recommended).
+              </p>
+            ) : null}
+            {micError ? (
+              <p className="mt-2 text-[11px] text-[#ffb7b7]">{micError}</p>
+            ) : null}
+          </div>
 
           <div className="mt-7 flex justify-center">
             <button
               type="button"
               onClick={onClose}
+              disabled={pending}
               className="rounded-full bg-[#ff5e5e] px-6 py-3 font-semibold text-white transition hover:bg-[#e54f4f]"
             >
               End call

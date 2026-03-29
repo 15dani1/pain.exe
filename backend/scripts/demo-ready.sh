@@ -44,4 +44,8 @@ else
   pass "chat + voice"
 fi
 
+call=$(curl -sS -X POST "$BASE_URL/api/call/start" -H "Content-Type: application/json" -d "{\"userId\":\"$USER_ID\"}")
+echo "$call" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s); if(!j.ok || !j.provider){process.exit(1);} console.log(`provider=${j.provider} status=${j.status ?? "unknown"}`);});' || fail "Call stage trigger failed"
+pass "stage 4 call trigger"
+
 printf "\nDemo readiness: READY\n"

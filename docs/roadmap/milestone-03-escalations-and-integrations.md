@@ -7,9 +7,9 @@
 - [x] Frontend escalation timeline and integration status UI are implemented
 - [x] Voice preview path exists with fallback behavior
 - [ ] Real Google Calendar event creation is not wired yet
-- [ ] Real wearable verification path is not wired yet
+- [x] Garmin-first wearable verification path is now wired in backend
 - [ ] Twilio delivery is still represented as a demo/stub surface
-- In progress: this milestone is partially complete and in a good place for frontend-to-backend integration
+- In progress: this milestone is now ready for frontend wiring of Garmin sync status and demo controls
 
 ## Objective
 
@@ -30,11 +30,12 @@ Connect the core coaching loop to real-world pressure channels so the agent can 
 - chooses the next approved action based on policy
 - continues follow-up after no response
 - suppresses unnecessary nagging when an integration verifies completion
+- escalates when Garmin data shows no workout corresponding to the plan
 
 ## Team Workstreams
 
 - worker: queue processing and idempotent timers
-- integrations: Twilio, voice, calendar, wearable adapters
+- integrations: Twilio, voice, calendar, Garmin activity adapter
 - domain: escalation decisions, quiet hours, and allowed-channel rules
 - frontend: escalation timeline and integration status UI
 
@@ -44,6 +45,7 @@ Connect the core coaching loop to real-world pressure channels so the agent can 
 - quiet hours delay calls without losing the escalation
 - calendar and wearable events can affect coaching state
 - call and SMS outcomes feed back into the app timeline
+- Garmin sync can either clear the task or apply a strike with escalating feedback
 
 ## Risks
 

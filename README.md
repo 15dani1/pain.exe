@@ -36,6 +36,7 @@ This project is explicitly being built with personal AI agent behavior in mind.
 - Takes initiative by scheduling follow-ups and escalating when the user disengages
 - Coordinates actions across chat, SMS, calendar, and voice channels
 - Adapts future recommendations based on adherence, constraints, and imported activity
+- Reacts to imported Garmin activity evidence and escalates when the workout does not match the plan
 - Acts continuously through background jobs instead of only responding when manually opened
 - Preserves persona while remaining bounded by system safety and consent rules
 
@@ -68,7 +69,7 @@ These are the technologies we are committing to for the hackathon build:
 - Voice: ElevenLabs behind a provider abstraction
 - Telephony and SMS: Twilio
 - Calendar: Google Calendar first
-- Wearables: one credible Apple Health, Google Fit, or aggregator-backed ingestion path
+- Wearables: Garmin-first ingestion path for the demo, with room to expand later
 - Observability: Sentry, PostHog, structured logs
 
 ## What Makes This Different
@@ -135,15 +136,16 @@ These are the technologies we are committing to for the hackathon build:
 
 ## Current Implementation Status
 
-- Backend API scaffold is in place in [backend/README.md](/Users/fzapata99/Documents/pain.exe/pain.exe/backend/README.md)
-- Frontend trainee console is in place in [frontend/README.md](/Users/fzapata99/Documents/pain.exe/pain.exe/frontend/README.md)
-- Work split tracking lives in [docs/roadmap/work-split.md](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/work-split.md)
-- Backend progress tracking lives in [backend/docs/backend-progress.md](/Users/fzapata99/Documents/pain.exe/pain.exe/backend/docs/backend-progress.md)
+- Backend API scaffold is in place in [backend/README.md](backend/README.md)
+- Frontend trainee console is in place in [frontend/README.md](frontend/README.md)
+- Demo-safe Garmin simulator exists in `frontend/` and can drive the real backend escalation loop without real Garmin credentials
+- Work split tracking lives in [docs/roadmap/work-split.md](docs/roadmap/work-split.md)
+- Backend progress tracking lives in [backend/docs/backend-progress.md](backend/docs/backend-progress.md)
 
 ## How To Use This Repo
 
-1. Start with [docs/INDEX.md](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/INDEX.md) for the full reading order.
-2. Build the first thin slice from [docs/roadmap/demo-slice.md](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/demo-slice.md).
+1. Start with [docs/INDEX.md](docs/INDEX.md) for the full reading order.
+2. Build the first thin slice from [docs/roadmap/demo-slice.md](docs/roadmap/demo-slice.md).
 3. Use the milestone files in `docs/roadmap/` to split work across the hackathon team.
 4. Implement code into the predefined app and package folders as each planning doc is converted into tickets.
 
@@ -166,10 +168,10 @@ These are the technologies we are committing to for the hackathon build:
 
 ## Roadmap
 
-- [Demo Slice](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/demo-slice.md)
-- [Milestone 01: Foundation](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/milestone-01-foundation.md)
-- [Milestone 02: Core Agent Loop](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/milestone-02-core-agent-loop.md)
-- [Milestone 03: Escalations And Integrations](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/milestone-03-escalations-and-integrations.md)
-- [Milestone 04: Demo Polish](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/milestone-04-demo-polish.md)
-- [Team Roles And Ownership](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/team-roles.md)
-- [Work Split](/Users/fzapata99/Documents/pain.exe/pain.exe/docs/roadmap/work-split.md)
+- [Demo Slice](docs/roadmap/demo-slice.md)
+- [Milestone 01: Foundation](docs/roadmap/milestone-01-foundation.md)
+- [Milestone 02: Core Agent Loop](docs/roadmap/milestone-02-core-agent-loop.md)
+- [Milestone 03: Escalations And Integrations](docs/roadmap/milestone-03-escalations-and-integrations.md)
+- [Milestone 04: Demo Polish](docs/roadmap/milestone-04-demo-polish.md)
+- [Team Roles And Ownership](docs/roadmap/team-roles.md)
+- [Work Split](docs/roadmap/work-split.md)

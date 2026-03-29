@@ -40,7 +40,21 @@ Response:
   "escalation": { "stage": 2, "lastActionAt": "2026-03-28T23:01:16.071Z" },
   "recentMessages": [{ "role": "coach", "content": "You said Thursday. It's Saturday.", "sentAt": "2026-03-28T23:01:16.071Z" }],
   "recoveryAction": { "title": "20-min punishment run + commitment to tomorrow", "description": "Complete this today to clear debt and reset momentum." },
-  "escalationEvents": [{ "type": "reminder_sent", "label": "Reminder sent", "at": "2026-03-28T21:01:16.071Z" }]
+  "escalationEvents": [{ "type": "reminder_sent", "label": "Reminder sent", "at": "2026-03-28T21:01:16.071Z" }],
+  "integrations": {
+    "garmin": {
+      "connected": true,
+      "lastSyncAt": "2026-03-29T01:14:13.349Z",
+      "status": "strike",
+      "strikeCount": 1,
+      "lastEvaluation": {
+        "matched": false,
+        "summary": "No Garmin activity matched 20-min punishment run + commitment to tomorrow; strike applied",
+        "matchedActivityType": null,
+        "matchedAt": null
+      }
+    }
+  }
 }
 ```
 
@@ -109,6 +123,53 @@ Request:
 Response:
 ```json
 { "mimeType": "audio/mpeg", "audioBase64": "<base64>" }
+```
+
+## POST /api/integrations/garmin/sync
+Request:
+```json
+{
+  "userId": "<id>",
+  "activities": [
+    {
+      "activityId": "run-1",
+      "name": "Evening Recovery Run",
+      "type": "running",
+      "startTime": "2026-03-30T00:50:00.000Z",
+      "durationMinutes": 24,
+      "distanceKm": 3.8,
+      "averageHeartRate": 148,
+      "steps": 4100
+    }
+  ]
+}
+```
+
+Behavior:
+- Treats Garmin as the first wearable verification path
+- Matches imported activities against `todayTask` using workout type, timing window, and effort threshold
+- Marks the task `done` and lowers pressure when Garmin evidence matches the plan
+- Applies a strike and escalates the coach response when no Garmin activity matches the planned workout
+- Persists sync state in `integrations` and logs the imported evidence in `check_ins`
+
+Response:
+```json
+{
+  "ok": true,
+  "matched": false,
+  "taskTitle": "20-min punishment run + commitment to tomorrow",
+  "expectedType": "run",
+  "expectedDurationMinutes": null,
+  "activityCount": 1,
+  "matchedActivity": null,
+  "strikeApplied": true,
+  "feedback": "Now we're into excuses territory...",
+  "status": "missed",
+  "debtCount": 2,
+  "stage": 3,
+  "recoveryAction": { "title": "...", "description": "..." },
+  "idempotentReplay": false
+}
 ```
 
 ## Limits

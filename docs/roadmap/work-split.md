@@ -12,11 +12,14 @@ That's the demo. Build only what serves that story.
 
 - Real Twilio SMS or voice calls (show a "call placed" card, not a real call)
 - Real Google Calendar sync (stub it)
-- Wearable integration (out of scope)
+- Multi-provider wearable platform
 - Plan regeneration logic (seed the plan)
 - Worker/queue infrastructure (fake delays with setTimeout or just preload state)
 - Real auth (one hardcoded demo account, or Clerk in 10 minutes if needed)
 - Multi-persona, configurable escalation (hardcode the Goggins persona)
+
+Note:
+Garmin is now the chosen first wearable path. The broader wearable platform is still out of scope, but a Garmin-first verification slice is in scope because it directly strengthens the accountability demo.
 
 ---
 

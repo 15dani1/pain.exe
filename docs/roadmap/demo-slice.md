@@ -18,12 +18,12 @@ Ship one polished end-to-end scenario that makes the product feel real.
 2. Daily command center UI
 3. Escalation state machine
 4. Message timeline and call summary
-5. Calendar sync stub and one wearable verification path
+5. Calendar sync stub and one Garmin verification path
 
 ## Out Of Scope For Initial Commit
 
 - billing
 - app-store packaging
-- multi-provider wearable support
+- multi-provider wearable support beyond Garmin
 - admin console
 - deep compliance workflows

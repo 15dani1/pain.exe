@@ -22,6 +22,9 @@ Last updated: 2026-03-28
 - [x] `POST /api/voice/preview` (ElevenLabs TTS)
 - [x] `POST /api/chat` supports `includeVoice: true`
 - [x] Chat voice graceful degradation (`voiceError` if audio fails)
+- [x] `POST /api/integrations/garmin/sync` for Garmin activity ingestion and plan matching
+- [x] Garmin sync writes wearable evaluation state into dashboard data
+- [x] No-match Garmin sync applies a strike and escalates coach feedback
 - [x] `POST /api/demo/reset`
 - [x] `GET /api/demo/state`
 - [x] Request size + per-endpoint rate limits (`/api/chat`, `/api/voice/preview`)

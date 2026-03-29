@@ -43,9 +43,12 @@ body {
     sans-serif;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* In @layer base so Tailwind utilities (e.g. text-white on nav pills) win over color: inherit */
+@layer base {
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
 }
 
 button,

@@ -11,6 +11,20 @@ export interface DashboardResponse {
   escalation: { stage: EscalationStage; lastActionAt: string };
   recentMessages: { role: MessageRole; content: string; sentAt: string }[];
   recoveryAction: { title: string; description: string } | null;
+  integrations?: {
+    garmin?: {
+      connected: boolean;
+      lastSyncAt: string | null;
+      status: "idle" | "matched" | "strike";
+      strikeCount: number;
+      lastEvaluation: {
+        matched: boolean;
+        summary: string;
+        matchedActivityType: string | null;
+        matchedAt: string | null;
+      } | null;
+    };
+  };
 }
 
 export interface EscalationEvent {

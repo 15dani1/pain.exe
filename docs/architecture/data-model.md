@@ -28,6 +28,7 @@
 - imported workout evidence
 - subjective effort
 - excuses and pain reports
+- Garmin sync evaluation outcome and matched activity summary
 
 ### escalations
 
@@ -49,6 +50,7 @@
 - provider tokens
 - sync health
 - last sync times
+- Garmin strike count and last plan-matching evaluation
 
 ### coach_profiles
 

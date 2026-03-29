@@ -7,6 +7,8 @@
 - quiet hours defer calls correctly
 - calendar events relink on plan changes
 - wearable sync suppresses redundant reminders
+- Garmin sync with a matching run clears the planned task and lowers pressure
+- Garmin sync with no matching activity applies one strike and escalates feedback once
 - call webhooks update follow-up behavior
 - voice generation failure falls back cleanly
 - timezone handling is correct end-to-end

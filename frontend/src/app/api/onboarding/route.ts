@@ -59,8 +59,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       userId: data.userId,
-      goalId: `goal_${payload.goalType.toLowerCase().replace(/\s+/g, "_")}_${payload.targetDate}`,
-      planId: `plan_${payload.goalType.toLowerCase().replace(/\s+/g, "_")}_${payload.targetDate}`,
+      goalId: `goal_${data.userId}`,
+      planId: `plan_${data.userId}`,
       summary: `${payload.fullName} committed to ${payload.goalType.toLowerCase()} by ${payload.targetDate} with ${payload.escalationTolerance.toLowerCase()} accountability across ${payload.channels.join(", ")}.`,
       nextMission,
       caution:

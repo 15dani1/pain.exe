@@ -114,6 +114,20 @@ export type DashboardPayload = {
     label: string;
     at: string;
   }[];
+  integrations?: {
+    garmin?: {
+      connected: boolean;
+      lastSyncAt: string | null;
+      status: "idle" | "matched" | "strike";
+      strikeCount: number;
+      lastEvaluation: {
+        matched: boolean;
+        summary: string;
+        matchedActivityType: string | null;
+        matchedAt: string | null;
+      } | null;
+    };
+  };
 };
 
 export type DemoApiResponse = {
@@ -155,9 +169,9 @@ export const integrationStatuses: IntegrationStatus[] = [
     detail: "Workout events, pre-run nudges, and overdue timers will connect here.",
   },
   {
-    name: "Wearable Verification",
-    state: "Stubbed",
-    detail: "Future imported workout signals can suppress redundant reminders.",
+    name: "Garmin Demo Simulator",
+    state: "Integrated",
+    detail: "Demo-safe Garmin-style metrics can now drive real plan matching and strike escalation.",
   },
   {
     name: "Twilio SMS + Calls",
@@ -189,6 +203,12 @@ export const backendStubs: BackendStub[] = [
     endpoint: "/api/chat, /api/checkin, /api/recovery",
     status: "Integrated",
     note: "Frontend actions proxy through Next.js route handlers to Rahul's backend.",
+  },
+  {
+    surface: "Garmin demo sync",
+    endpoint: "/api/garmin-demo -> backend /api/integrations/garmin/sync",
+    status: "Integrated",
+    note: "Runs seeded Garmin-style activity scenarios against the live backend plan and escalation state.",
   },
 ];
 

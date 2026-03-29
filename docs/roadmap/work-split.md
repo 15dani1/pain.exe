@@ -53,10 +53,6 @@ That's the demo. Build only what serves that story.
 - [x] Frontend data fetching and actions are now proxied to backend `/api/dashboard`, `/api/onboarding`, `/api/checkin`, `/api/recovery`, and `/api/chat`
 - [ ] Remaining blocker: configure `MONGODB_URI` and run Rahul's backend service locally for end-to-end runtime verification
 - [ ] Next backend improvement: expose plan/goal listing endpoints so saved plan history can be fully backend-backed instead of partially client-persisted
-- [x] Backend onboarding persistence now stores frontend-facing profile/goal context fields in Mongo (`phoneNumber`, `googleCalendarEmail`, `goalType`, `baseline`, `weeklyAvailability`, `wakeWindow`, `injuryLimit`, `trigger`, `channels`)
-- [x] Existing seeded demo records backfilled in Mongo via `npm run backfill:frontend-schema`
-- [ ] Next backend alignment: add read endpoints for plan/goal history (`GET /api/plans`, `GET /api/goals`) so frontend no longer needs client-side stubs for onboarding summary history
-- [ ] Next backend alignment: add optional migration path for non-demo existing users to populate missing onboarding schema fields
 
 **Demo-critical visual:** the dashboard should look dramatic when a workout is missed. Think red debt counter, escalation stage highlighted, coach message visible.
 
@@ -77,6 +73,12 @@ That's the demo. Build only what serves that story.
 - [x] `POST /api/checkin` — marks task complete or missed, advances escalation stage
 - [x] `POST /api/recovery` — accepts or snoozes a recovery action, logs resolution
 - [x] Fake escalation log — hardcode a timeline of "reminder sent", "SMS sent", "call placed" events that the frontend can display
+
+### Backend Schema Alignment (Frontend Sync)
+- [x] Backend onboarding persistence now stores frontend-facing profile/goal context fields in Mongo (`phoneNumber`, `googleCalendarEmail`, `goalType`, `baseline`, `weeklyAvailability`, `wakeWindow`, `injuryLimit`, `trigger`, `channels`)
+- [x] Existing seeded demo records backfilled in Mongo via `npm run backfill:frontend-schema`
+- [ ] Next backend alignment: add read endpoints for plan/goal history (`GET /api/plans`, `GET /api/goals`) so frontend no longer needs client-side stubs for onboarding summary history
+- [ ] Next backend alignment: add optional migration path for non-demo existing users to populate missing onboarding schema fields
 
 ---
 
